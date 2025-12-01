@@ -9,6 +9,8 @@ workflows:
       xcode: latest
     scripts:
       - name: Build APK
-        script: ./gradlew assembleRelease
+        script: |
+          chmod +x ./gradlew
+          ./gradlew assembleRelease
     artifacts:
       - app/build/outputs/apk/release/app-release.apk

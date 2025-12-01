@@ -1,7 +1,5 @@
 package com.example.allinoneflushapp
 
-import android.app.ActivityManager
-import android.content.ComponentCallbacks2  // <-- BARU: import ni
 import android.content.Context
 import android.net.ConnectivityManager
 import android.os.Bundle
@@ -12,7 +10,6 @@ import androidx.appcompat.app.AppCompatActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import java.net.InetAddress
 import java.net.URL
 
 class MainActivity : AppCompatActivity() {
@@ -48,7 +45,7 @@ class MainActivity : AppCompatActivity() {
     private fun updateIP() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val ip = URL("https://api.ipify.org").readText() // dibetulkan: buang extra space
+                val ip = URL("https://api.ipify.org").readText().trim()
                 runOnUiThread {
                     textViewIP.text = "Public IP: $ip"
                 }
@@ -74,7 +71,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun renewIP() {
         val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        cm.allNetworks
+        cm.allNetworks // just to trigger network awareness (no-op, but harmless)
         bestEffortRAMFlush()
         updateIP()
         Toast.makeText(this, "Attempted IP refresh", Toast.LENGTH_SHORT).show()
@@ -85,8 +82,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun bestEffortRAMFlush() {
-        val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        am.trimMemory(ComponentCallbacks2.TRIM_MEMORY_COMPLETE) // <-- BETUL: guna full reference
+        // Cannot call trimMemory() manually — not allowed in Android
+        // Best effort: clear local cache + suggest GC
+        cacheDir.deleteRecursively()
         System.gc()
     }
 }

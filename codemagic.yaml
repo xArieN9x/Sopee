@@ -3,18 +3,17 @@ workflows:
     name: Android Release Workflow
     max_build_duration: 60
     environment:
-      vars:
-        FLUTTER_CHANNEL: stable
-      flutter: stable
-      xcode: latest
+      android:
+        java_version: 17
     scripts:
-      - name: Get Flutter packages
+      - name: Setup Gradle
         script: |
-          flutter pub get
+          gradle wrapper --gradle-version=8.0
+          chmod +x gradlew
           
       - name: Build APK
         script: |
-          flutter build apk --release
+          ./gradlew assembleRelease
           
     artifacts:
-      - build/app/outputs/flutter-apk/app-release.apk
+      - app/build/outputs/apk/release/app-release.apk

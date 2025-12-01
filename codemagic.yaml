@@ -8,10 +8,16 @@ workflows:
       flutter: stable
       xcode: latest
     scripts:
+      - name: Fix Gradle Wrapper
+        script: |
+          cd android
+          gradle wrapper --gradle-version=8.0
+          chmod +x gradlew
+          
       - name: Build APK
         script: |
-          chmod +x ./gradlew
-          chmod +r ./gradle/wrapper/gradle-wrapper.jar
+          cd android
           ./gradlew assembleRelease
+          
     artifacts:
-      - app/build/outputs/apk/release/app-release.apk
+      - android/app/build/outputs/apk/release/app-release.apk

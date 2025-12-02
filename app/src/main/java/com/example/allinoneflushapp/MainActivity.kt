@@ -20,6 +20,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AppGlobals.applicationContext = applicationContext
         setContentView(R.layout.activity_main)
 
         textViewIP = findViewById(R.id.textViewIP)
@@ -40,9 +41,7 @@ class MainActivity : AppCompatActivity() {
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val ip = URL("https://api.ipify.org").readText().trim()
-                runOnUiThread {
-                    textViewIP.text = "Public IP: $ip"
-                }
+                runOnUiThread { textViewIP.text = "Public IP: $ip" }
             } catch (e: Exception) {
                 runOnUiThread { textViewIP.text = "Public IP: Error" }
             }
@@ -70,7 +69,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun doAllJob() {
-        // UX automation sequence
         AccessibilityAutomationService.clearCacheForceStopApp(pandaPackage)
         AccessibilityAutomationService.toggleAirplaneMode()
         rotateDNS()

@@ -1,1 +1,6 @@
-<string name="accessibility_service_description">Accessibility Service for Rider Booster Automation</string>
+<resources>
+    <string name="app_name">All In One Flush App</string>
+    <string name="accessibility_service_description">
+        Accessibility Service for Rider Booster Automation
+    </string>
+</resources>

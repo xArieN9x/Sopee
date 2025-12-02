@@ -1,25 +1,22 @@
 package com.example.allinoneflushapp
 
-import android.content.Context
-import android.net.ConnectivityManager
 import android.os.Bundle
 import android.widget.Button
+import android.widget.ImageView
 import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
 import java.net.URL
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var textViewIP: TextView
     private lateinit var textViewDNS: TextView
-    private lateinit var btnFlushDNS: Button
-    private lateinit var btnRenewIP: Button
+    private lateinit var networkIndicator: ImageView
+    private lateinit var btnDoAllJob: Button
 
-    private val dnsList = listOf("1.1.1.1", "8.8.8.8", "9.9.9.9")
+    private val pandaPackage = "com.logistics.rider.foodpanda"
+    private val dnsList = listOf("1.1.1.1", "8.8.8.8", "9.9.9.9", "9.9.9.10")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -27,18 +24,15 @@ class MainActivity : AppCompatActivity() {
 
         textViewIP = findViewById(R.id.textViewIP)
         textViewDNS = findViewById(R.id.textViewDNS)
-        btnFlushDNS = findViewById(R.id.btnFlushDNS)
-        btnRenewIP = findViewById(R.id.btnRenewIP)
+        networkIndicator = findViewById(R.id.networkIndicator)
+        btnDoAllJob = findViewById(R.id.btnDoAllJob)
 
         updateIP()
         rotateDNS()
+        startNetworkMonitor()
 
-        btnFlushDNS.setOnClickListener {
-            flushDNS()
-        }
-
-        btnRenewIP.setOnClickListener {
-            renewIP()
+        btnDoAllJob.setOnClickListener {
+            doAllJob()
         }
     }
 
@@ -50,9 +44,7 @@ class MainActivity : AppCompatActivity() {
                     textViewIP.text = "Public IP: $ip"
                 }
             } catch (e: Exception) {
-                runOnUiThread {
-                    textViewIP.text = "Public IP: Error"
-                }
+                runOnUiThread { textViewIP.text = "Public IP: Error" }
             }
         }
     }
@@ -60,31 +52,28 @@ class MainActivity : AppCompatActivity() {
     private fun rotateDNS() {
         val selectedDNS = dnsList.random()
         textViewDNS.text = "DNS: $selectedDNS"
-        Toast.makeText(this, "DNS rotated to $selectedDNS", Toast.LENGTH_SHORT).show()
+        AppMonitorVPNService.rotateDNS(listOf(selectedDNS))
     }
 
-    private fun flushDNS() {
+    private fun startNetworkMonitor() {
+        CoroutineScope(Dispatchers.IO).launch {
+            while (true) {
+                val connected = AppMonitorVPNService.isPandaActive()
+                runOnUiThread {
+                    networkIndicator.setImageResource(
+                        if (connected) R.drawable.green_circle else R.drawable.red_circle
+                    )
+                }
+                delay(3000)
+            }
+        }
+    }
+
+    private fun doAllJob() {
+        // UX automation sequence
+        AccessibilityAutomationService.clearCacheForceStopApp(pandaPackage)
+        AccessibilityAutomationService.toggleAirplaneMode()
         rotateDNS()
-        clearAppCache()
-        Toast.makeText(this, "DNS flushed & app cache cleared", Toast.LENGTH_SHORT).show()
-    }
-
-    private fun renewIP() {
-        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        cm.allNetworks // just to trigger network awareness (no-op, but harmless)
-        bestEffortRAMFlush()
         updateIP()
-        Toast.makeText(this, "Attempted IP refresh", Toast.LENGTH_SHORT).show()
-    }
-
-    private fun clearAppCache() {
-        cacheDir.deleteRecursively()
-    }
-
-    private fun bestEffortRAMFlush() {
-        // Cannot call trimMemory() manually — not allowed in Android
-        // Best effort: clear local cache + suggest GC
-        cacheDir.deleteRecursively()
-        System.gc()
     }
 }

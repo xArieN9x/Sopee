@@ -35,8 +35,8 @@ class AppMonitorVPNService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         instance = this
         createNotificationChannel()
-        startForeground(NOTIF_ID, createNotification("Panda Monitor running"))
-        // initial estab with default dns
+        startForeground(NOTIF_ID, createNotification("Panda Monitor running", connected = false))
+        // initial establish with default dns
         establishVPN("8.8.8.8")
         return START_STICKY
     }
@@ -45,17 +45,26 @@ class AppMonitorVPNService : VpnService() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val nm = getSystemService(NotificationManager::class.java)
             val channel = NotificationChannel(CHANNEL_ID, "Panda Monitor", NotificationManager.IMPORTANCE_LOW)
-            nm.createNotificationChannel(channel)
+            nm?.createNotificationChannel(channel)
         }
     }
 
-    private fun createNotification(text: String): Notification {
-        val pi = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+    private fun createNotification(text: String, connected: Boolean): Notification {
+        val pi = PendingIntent.getActivity(
+            this, 0,
+            Intent(this, MainActivity::class.java),
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+        )
+
+        // use safe built-in icons instead of removed stat_sys_vpn
+        val smallIcon = if (connected) android.R.drawable.presence_online else android.R.drawable.presence_busy
+
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Panda Monitor")
             .setContentText(text)
-            .setSmallIcon(android.R.drawable.stat_sys_vpn)
+            .setSmallIcon(smallIcon)
             .setContentIntent(pi)
+            .setOngoing(true)
             .build()
     }
 
@@ -69,7 +78,17 @@ class AppMonitorVPNService : VpnService() {
             .addRoute("0.0.0.0", 0)
             .addAllowedApplication("com.logistics.rider.foodpanda")
             .addDnsServer(dns)
-        vpnInterface = builder.establish()
+        vpnInterface = try {
+            builder.establish()
+        } catch (e: Exception) {
+            null
+        }
+
+        // update notification to reflect connection attempt
+        try {
+            startForeground(NOTIF_ID, createNotification("Panda Monitor (DNS: $dns)", connected = vpnInterface != null))
+        } catch (_: Exception) {}
+
         // start monitoring
         monitorTraffic()
     }
@@ -81,7 +100,8 @@ class AppMonitorVPNService : VpnService() {
                     val fd = vpnInterface?.fileDescriptor
                     if (fd == null) {
                         pandaActive = false
-                        Thread.sleep(1000); continue
+                        Thread.sleep(1000)
+                        continue
                     }
                     val input = FileInputStream(fd)
                     val available = try { input.available() } catch (_: Exception) { 0 }
@@ -89,7 +109,7 @@ class AppMonitorVPNService : VpnService() {
                 } catch (e: Exception) {
                     pandaActive = false
                 }
-                Thread.sleep(1000)
+                try { Thread.sleep(1000) } catch (_: Exception) {}
             }
         }.start()
     }

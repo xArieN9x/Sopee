@@ -145,4 +145,75 @@ class AccessibilityAutomationService : AccessibilityService() {
         }
         return null
     }
+
+    // Helper: find dialog button by multiple texts OR common view ids (Realme/ColorOS)
+    fun AccessibilityServiceHelper_findDialogButton(root: AccessibilityNodeInfo?, texts: List<CharSequence>): AccessibilityNodeInfo? {
+        val r = root ?: return null
+    
+        // 1) Exact text search (high priority) - covers "Force stop" on Realme
+        for (t in texts) {
+            val nodes = r.findAccessibilityNodeInfosByText(t.toString())
+            if (!nodes.isNullOrEmpty()) {
+                for (n in nodes) {
+                    if (n.isClickable) return n
+                    var p = n.parent
+                    while (p != null) {
+                        if (p.isClickable) return p
+                        p = p.parent
+                    }
+                }
+            }
+        }
+    
+        // 2) Fallback: try standard android dialog ids
+        try {
+            val btn1 = r.findAccessibilityNodeInfosByViewId("android:id/button1")
+            if (!btn1.isNullOrEmpty()) {
+                for (n in btn1) if (n.isClickable) return n
+            }
+        } catch (_: Throwable) {}
+    
+        // 3) Fallback: Realme/ColorOS common ids
+        val colorosIds = listOf(
+            "com.coloros.safecenter:id/affirm",
+            "com.android.settings:id/confirm_button",
+            "com.android.settings:id/button1",
+            "com.android.settings:id/btn_right",
+            "com.coloros.storage:id/btn_cleanup"
+        )
+        for (id in colorosIds) {
+            try {
+                val nodes = r.findAccessibilityNodeInfosByViewId(id)
+                if (!nodes.isNullOrEmpty()) {
+                    for (n in nodes) {
+                        if (n.isClickable) return n
+                        var p = n.parent
+                        while (p != null) {
+                            if (p.isClickable) return p
+                            p = p.parent
+                        }
+                    }
+                }
+            } catch (_: Throwable) { /* ignore */ }
+        }
+    
+        // 4) fallback: any button in dialog area (search by alertTitle parent)
+        try {
+            val titles = r.findAccessibilityNodeInfosByViewId("android:id/alertTitle")
+            if (!titles.isNullOrEmpty()) {
+                val title = titles.first()
+                // scan siblings/parent for clickable children
+                var p = title.parent
+                if (p != null) {
+                    for (i in 0 until p.childCount) {
+                        val c = p.getChild(i)
+                        if (c != null && c.isClickable) return c
+                    }
+                }
+            }
+        } catch (_: Throwable) {}
+    
+        return null
+    }
+
 }

@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:description="@string/accessibility_service_description"
-    <!-- monitor these system packages (Settings, SystemUI, ColorOS/Realme manager) -->
     android:packageNames="com.android.settings,com.android.systemui,com.coloros.safecenter,com.coloros.notificationmanager"
     android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged|typeViewClicked"
     android:accessibilityFlags="flagDefault|flagIncludeNotImportantViews|flagReportViewIds|flagRetrieveInteractiveWindows|flagRequestTouchExplorationMode"

@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.widget.Button
 import android.widget.ImageView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import kotlinx.coroutines.*
@@ -27,6 +28,7 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == Activity.RESULT_OK) {
+            Toast.makeText(this, "Setting up VPN...", Toast.LENGTH_SHORT).show()
             startService(Intent(this, AppMonitorVPNService::class.java))
             AppMonitorVPNService.rotateDNS(dnsList)
         }
@@ -56,6 +58,7 @@ class MainActivity : AppCompatActivity() {
         if (intent != null) {
             vpnPermissionLauncher.launch(intent)
         } else {
+            Toast.makeText(this, "Setting up VPN...", Toast.LENGTH_SHORT).show()
             startService(Intent(this, AppMonitorVPNService::class.java))
             AppMonitorVPNService.rotateDNS(dnsList)
         }
@@ -97,29 +100,41 @@ class MainActivity : AppCompatActivity() {
         AccessibilityAutomationService.requestClearAndForceStop(pandaPackage)
 
         CoroutineScope(Dispatchers.Main).launch {
-            // ✅ OPTIMIZED: 3000ms → 2500ms (faster flow)
-            delay(2500)
+            // ✅ Wait for force stop + clear cache complete (increase time)
+            delay(7000)
             
             // 2. Toggle airplane
             AccessibilityAutomationService.requestToggleAirplane()
             
-            // ✅ OPTIMIZED: 7000ms → 5000ms (network recovery faster)
-            delay(5000)
+            // ✅ Wait airplane cycle (4s ON + 1s buffer)
+            delay(5500)
+            
+            // ✅ Bring CB app to foreground
+            bringAppToForeground()
+            delay(500)
             
             // 3. Setup VPN
+            Toast.makeText(this@MainActivity, "Setting up VPN tunnel...", Toast.LENGTH_SHORT).show()
             requestVpnPermission()
             
-            // ✅ OPTIMIZED: 2000ms → 1000ms (tunnel establish faster)
-            delay(1000)
+            // ✅ Wait VPN establish
+            delay(2000)
             
             // 4. Rotate DNS & refresh IP
             rotateDNS()
+            delay(500)
             updateIP()
             
-            // 5. Launch Panda app immediately
-            delay(500)
+            // 5. Launch Panda app
+            delay(1000)
             launchPandaApp()
         }
+    }
+
+    private fun bringAppToForeground() {
+        val intent = Intent(this, MainActivity::class.java)
+        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+        startActivity(intent)
     }
 
     private fun launchPandaApp() {
@@ -128,9 +143,10 @@ class MainActivity : AppCompatActivity() {
             if (intent != null) {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 startActivity(intent)
+                Toast.makeText(this, "Panda launched!", Toast.LENGTH_SHORT).show()
             }
         } catch (e: Exception) {
-            // Panda not installed or error
+            Toast.makeText(this, "Failed to launch Panda", Toast.LENGTH_SHORT).show()
         }
     }
 }

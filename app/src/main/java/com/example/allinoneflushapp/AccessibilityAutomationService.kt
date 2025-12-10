@@ -45,19 +45,7 @@ class AccessibilityAutomationService : AccessibilityService() {
                             svc.findAndClick(*clearCacheKeys)
                             // ✅ FIX: Multiple BACK to close App Info completely
                             handler.postDelayed({ 
-                                svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-                                handler.postDelayed({
-                                    svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-                                    handler.postDelayed({
-                                        svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-                                        handler.postDelayed({
-                                            svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-                                            handler.postDelayed({
-                                                svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
-                                            }, 400)
-                                        }, 400)
-                                    }, 400)
-                                }, 400)
+                                svc.performGlobalAction(GLOBAL_ACTION_HOME) // Terus HOME!
                             }, 4000)
                         }, 1500)
                     }

@@ -49,9 +49,15 @@ class AccessibilityAutomationService : AccessibilityService() {
                                 handler.postDelayed({
                                     svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
                                     handler.postDelayed({
-                                        svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
-                                    }, 300)
-                                }, 300)
+                                        svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                                        handler.postDelayed({
+                                            svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                                            handler.postDelayed({
+                                                svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+                                            }, 400)
+                                        }, 400)
+                                    }, 400)
+                                }, 400)
                             }, 4000)
                         }, 1500)
                     }

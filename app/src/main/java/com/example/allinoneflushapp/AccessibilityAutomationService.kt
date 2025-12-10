@@ -59,6 +59,41 @@ class AccessibilityAutomationService : AccessibilityService() {
             }, 1200)
         }
 
+        /**
+         * NEW: minimal flow that only force-stops the target package (no storage navigation).
+         * Keeps same timing/confirm pattern as requestClearAndForceStop.
+         */
+        fun requestForceStopOnly(packageName: String) {
+            val ctx = AppGlobals.applicationContext
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+            intent.data = Uri.parse("package:$packageName")
+            intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            ctx.startActivity(intent)
+
+            handler.postDelayed({
+                val svc = AppGlobals.accessibilityService ?: return@postDelayed
+
+                // Try to click Force Stop on App Info
+                val clicked = svc.findAndClick(*forceStopKeys)
+                if (clicked) {
+                    // Confirm force stop dialog (Realme uses "Force stop" text)
+                    handler.postDelayed({ svc.findAndClick(*confirmOkKeys) }, 700)
+                }
+
+                // after attempt, go back and home to leave system stable
+                handler.postDelayed({
+                    try {
+                        svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                    } catch (_: Exception) {}
+                    handler.postDelayed({
+                        try {
+                            svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+                        } catch (_: Exception) {}
+                    }, 300)
+                }, 1200)
+            }, 1200)
+        }
+
         fun requestToggleAirplane() {
             val svc = AppGlobals.accessibilityService ?: return
             svc.performGlobalAction(AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS)

@@ -83,6 +83,11 @@
                 android:value="keep_alive"/>
         </service>
 
+        <!-- NEW: Floating Widget Service -->
+        <service
+            android:name=".FloatingWidgetService"
+            android:exported="false"/>
+
     </application>
 
 </manifest>

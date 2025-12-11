@@ -13,7 +13,6 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.net.Socket
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 class AppMonitorVPNService : VpnService() {
@@ -33,7 +32,7 @@ class AppMonitorVPNService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
     private var forwardingActive = false
     private val tcpConnections = ConcurrentHashMap<Int, Socket>()
-    private val threadPool: ExecutorService = Executors.newCachedThreadPool()
+    private val workerPool = Executors.newCachedThreadPool()
     private val CHANNEL_ID = "panda_monitor_channel"
     private val NOTIF_ID = 1001
 
@@ -101,7 +100,7 @@ class AppMonitorVPNService : VpnService() {
     }
 
     private fun startPacketForwarding() {
-        threadPool.execute {
+        workerPool.execute {
             val buffer = ByteArray(2048)
             while (forwardingActive) {
                 try {
@@ -122,35 +121,34 @@ class AppMonitorVPNService : VpnService() {
     private fun handleOutboundPacket(packet: ByteArray) {
         try {
             val ipHeaderLen = (packet[0].toInt() and 0x0F) * 4
-            if (ipHeaderLen < 20 || packet.size < ipHeaderLen + 8) return
+            if (ipHeaderLen < 20 || packet.size < ipHeaderLen + 20) return
 
-            val protocol = packet[9].toUByte().toInt()
-            if (protocol != 6) return // Hanya TCP (protocol 6)
+            val protocol = packet[9].toInt() and 0xFF
+            if (protocol != 6) return // Hanya TCP
 
-            val destIpBytes = packet.sliceArray(16..19)
-            val destIp = destIpBytes.joinToString(".") { it.toUByte().toString() }
-            val srcPort = ((packet[ipHeaderLen].toUByte().toInt() shl 8) or packet[ipHeaderLen + 1].toUByte().toInt())
-            val destPort = ((packet[ipHeaderLen + 2].toUByte().toInt() shl 8) or packet[ipHeaderLen + 3].toUByte().toInt())
+            val destIp = "${packet[16].toInt() and 0xFF}.${packet[17].toInt() and 0xFF}.${packet[18].toInt() and 0xFF}.${packet[19].toInt() and 0xFF}"
+            val srcPort = ((packet[ipHeaderLen].toInt() and 0xFF) shl 8) or (packet[ipHeaderLen + 1].toInt() and 0xFF)
+            val destPort = ((packet[ipHeaderLen + 2].toInt() and 0xFF) shl 8) or (packet[ipHeaderLen + 3].toInt() and 0xFF)
             val payload = packet.copyOfRange(ipHeaderLen + 20, packet.size)
 
             if (!tcpConnections.containsKey(srcPort)) {
-                threadPool.execute {
+                workerPool.execute {
                     try {
                         val socket = Socket(destIp, destPort)
                         socket.tcpNoDelay = true
                         tcpConnections[srcPort] = socket
 
                         // Relay: Internet → App
-                        threadPool.execute {
+                        workerPool.execute {
                             val outStream = FileOutputStream(vpnInterface!!.fileDescriptor)
+                            val inStream = socket.getInputStream()
                             val buf = ByteArray(2048)
                             try {
-                                val inputStream = socket.getInputStream()
-                                while (forwardingActive && !socket.isClosed) {
-                                    val n = inputStream.read(buf)
+                                while (forwardingActive && socket.isConnected && !socket.isClosed) {
+                                    val n = inStream.read(buf)
                                     if (n <= 0) break
-                                    val replyPacket = buildTcpReplyPacket(destIp, destPort, "10.0.0.2", srcPort, buf, n)
-                                    outStream.write(replyPacket)
+                                    val reply = buildTcpPacket(destIp, destPort, "10.0.0.2", srcPort, buf.copyOfRange(0, n))
+                                    outStream.write(reply)
                                     outStream.flush()
                                 }
                             } catch (_: Exception) {}
@@ -175,34 +173,48 @@ class AppMonitorVPNService : VpnService() {
         } catch (_: Exception) {}
     }
 
-    private fun buildTcpReplyPacket(srcIp: String, srcPort: Int, destIp: String, destPort: Int, payload: ByteArray, len: Int): ByteArray {
-        val totalLen = 40 + len
+    private fun buildTcpPacket(srcIp: String, srcPort: Int, destIp: String, destPort: Int, payload: ByteArray): ByteArray {
+        val totalLen = 40 + payload.size
         val packet = ByteArray(totalLen)
-        // IP header
-        packet[0] = 0x45
+
+        // IP header (20 bytes)
+        packet[0] = 0x45 // Version + IHL
+        packet[1] = 0x00
         packet[2] = (totalLen ushr 8).toByte()
         packet[3] = (totalLen and 0xFF).toByte()
-        packet[9] = 6 // TCP
-        val srcParts = srcIp.split(".")
-        packet[12] = srcParts[0].toUByte().toByte()
-        packet[13] = srcParts[1].toUByte().toByte()
-        packet[14] = srcParts[2].toUByte().toByte()
-        packet[15] = srcParts[3].toUByte().toByte()
-        val destParts = destIp.split(".")
-        packet[16] = destParts[0].toUByte().toByte()
-        packet[17] = destParts[1].toUByte().toByte()
-        packet[18] = destParts[2].toUByte().toByte()
-        packet[19] = destParts[3].toUByte().toByte()
-        // TCP header (min 20 bytes)
+        packet[4] = 0x00
+        packet[5] = 0x00
+        packet[6] = 0x00
+        packet[7] = 0x00
+        packet[8] = 0xFF.toByte() // TTL
+        packet[9] = 0x06 // Protocol = TCP
+        packet[10] = 0x00
+        packet[11] = 0x00 // Header checksum (boleh 0 untuk local)
+        val srcOctets = srcIp.split(".")
+        packet[12] = srcOctets[0].toUByte().toByte()
+        packet[13] = srcOctets[1].toUByte().toByte()
+        packet[14] = srcOctets[2].toUByte().toByte()
+        packet[15] = srcOctets[3].toUByte().toByte()
+        val destOctets = destIp.split(".")
+        packet[16] = destOctets[0].toUByte().toByte()
+        packet[17] = destOctets[1].toUByte().toByte()
+        packet[18] = destOctets[2].toUByte().toByte()
+        packet[19] = destOctets[3].toUByte().toByte()
+
+        // TCP header (20 bytes min)
         packet[20] = (srcPort ushr 8).toByte()
         packet[21] = (srcPort and 0xFF).toByte()
         packet[22] = (destPort ushr 8).toByte()
         packet[23] = (destPort and 0xFF).toByte()
-        // Skip sequence/ack — cukup untuk local tunnel
-        packet[32] = 0x01 // Window size (min)
+        // Skip sequence/ack (tidak penting untuk tunnel local)
+        packet[32] = 0x01 // Window size min
         packet[33] = 0x00
+        packet[34] = 0x00 // Checksum (boleh 0)
+        packet[35] = 0x00
+        packet[36] = 0x00 // Urgent pointer
+
         // Payload
-        System.arraycopy(payload, 0, packet, 40, len)
+        System.arraycopy(payload, 0, packet, 40, payload.size)
         return packet
     }
 
@@ -210,7 +222,7 @@ class AppMonitorVPNService : VpnService() {
         forwardingActive = false
         tcpConnections.values.forEach { it.close() }
         tcpConnections.clear()
-        threadPool.shutdownNow()
+        workerPool.shutdownNow()
         try {
             vpnInterface?.close()
         } catch (_: Exception) {}

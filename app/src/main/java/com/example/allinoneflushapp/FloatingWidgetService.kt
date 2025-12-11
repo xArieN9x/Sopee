@@ -7,24 +7,20 @@ import android.os.Build
 import android.os.IBinder
 import android.view.*
 import android.widget.ImageView
-import kotlinx.coroutines.*
-
 import android.widget.TextView
+import kotlinx.coroutines.*
 import androidx.core.content.ContextCompat
-import android.animation.ValueAnimator
-import android.graphics.Color
 
 class FloatingWidgetService : Service() {
 
     private var windowManager: WindowManager? = null
     private var floatingView: View? = null
     private var bubbleImage: ImageView? = null
-    
+    private var bubbleText: TextView? = null
+
     companion object {
         private var instance: FloatingWidgetService? = null
-        
         fun isRunning() = instance != null
-        
         fun updateBubbleColor(isActive: Boolean) {
             instance?.updateColor(isActive)
         }
@@ -35,17 +31,16 @@ class FloatingWidgetService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        
+
         floatingView = LayoutInflater.from(this).inflate(R.layout.widget_layout, null)
         bubbleImage = floatingView?.findViewById(R.id.floatingBubble)
-        val textCB = floatingView?.findViewById<TextView>(R.id.textCB)
+        bubbleText = floatingView?.findViewById(R.id.bubbleText)
 
-
-        val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            WindowManager.LayoutParams.TYPE_PHONE
-        }
+        val layoutFlag =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else
+                WindowManager.LayoutParams.TYPE_PHONE
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -62,7 +57,7 @@ class FloatingWidgetService : Service() {
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         windowManager?.addView(floatingView, params)
 
-        // Make draggable
+        // Drag + click listener
         floatingView?.setOnTouchListener(object : View.OnTouchListener {
             private var initialX = 0
             private var initialY = 0
@@ -78,20 +73,19 @@ class FloatingWidgetService : Service() {
                         initialTouchY = event.rawY
                         return true
                     }
+
                     MotionEvent.ACTION_MOVE -> {
                         params.x = initialX + (event.rawX - initialTouchX).toInt()
                         params.y = initialY + (event.rawY - initialTouchY).toInt()
                         windowManager?.updateViewLayout(floatingView, params)
                         return true
                     }
+
                     MotionEvent.ACTION_UP -> {
-                        val deltaX = event.rawX - initialTouchX
-                        val deltaY = event.rawY - initialTouchY
-                        
-                        // If small movement, treat as click
-                        if (Math.abs(deltaX) < 10 && Math.abs(deltaY) < 10) {
-                            openMainActivity()
-                        }
+                        val diffX = Math.abs(event.rawX - initialTouchX)
+                        val diffY = Math.abs(event.rawY - initialTouchY)
+
+                        if (diffX < 10 && diffY < 10) openMainActivity()
                         return true
                     }
                 }
@@ -99,50 +93,20 @@ class FloatingWidgetService : Service() {
             }
         })
 
-        // Start monitoring status
         startStatusMonitor()
     }
 
     private fun updateColor(isActive: Boolean) {
-        val from = if (isActive) R.drawable.red_circle else R.drawable.green_circle
-        val to = if (isActive) R.drawable.green_circle else R.drawable.red_circle
-    
-        val start = ContextCompat.getColor(this, 
-            if (isActive) R.color.red_smooth else R.color.green_smooth
+        bubbleImage?.setImageResource(
+            if (isActive) R.drawable.green_smooth else R.drawable.red_smooth
         )
-        val end = ContextCompat.getColor(this, 
-            if (isActive) R.color.green_smooth else R.color.red_smooth
-        )
-    
-        animateColorTransition(start, end)
-    }
-
-    private fun animateColorTransition(fromColor: Int, toColor: Int) {
-        val animator = ValueAnimator.ofFloat(0f, 1f)
-        animator.duration = 500
-        animator.addUpdateListener { value ->
-            val fraction = value.animatedFraction
-            val blended = blendColors(fromColor, toColor, fraction)
-            bubbleImage?.setColorFilter(blended)
-        }
-        animator.start()
-    }
-    
-    private fun blendColors(from: Int, to: Int, ratio: Float): Int {
-        val inverse = 1f - ratio
-        val r = Color.red(from) * inverse + Color.red(to) * ratio
-        val g = Color.green(from) * inverse + Color.green(to) * ratio
-        val b = Color.blue(from) * inverse + Color.blue(to) * ratio
-        return Color.rgb(r.toInt(), g.toInt(), b.toInt())
     }
 
     private fun startStatusMonitor() {
         CoroutineScope(Dispatchers.IO).launch {
             while (isRunning()) {
                 val active = AppMonitorVPNService.isPandaActive()
-                withContext(Dispatchers.Main) {
-                    updateColor(active)
-                }
+                withContext(Dispatchers.Main) { updateColor(active) }
                 delay(1500)
             }
         }
@@ -155,9 +119,7 @@ class FloatingWidgetService : Service() {
     }
 
     override fun onDestroy() {
-        if (floatingView != null) {
-            windowManager?.removeView(floatingView)
-        }
+        floatingView?.let { windowManager?.removeView(it) }
         instance = null
         super.onDestroy()
     }

@@ -142,20 +142,13 @@ class MainActivity : AppCompatActivity() {
         }, 1500)
     }
 
-    // ✅ Dengan retry & delay tambahan
-    private fun updateIP(maxRetry: Int = 3) {
+    private fun updateIP() {
         CoroutineScope(Dispatchers.IO).launch {
-            var ip: String? = null
-            repeat(maxRetry) {
-                try {
-                    ip = URL("https://api.ipify.org").readText().trim()
-                    if (!ip.isNullOrBlank()) break
-                } catch (e: Exception) {
-                    delay(2000)
-                }
-            }
+            val ip = try {
+                URL("https://api.ipify.org").readText().trim()
+            } catch (e: Exception) { null }
             withContext(Dispatchers.Main) {
-                textViewIP.text = if (ip.isNullOrBlank()) "Public IP: —" else "Public IP: $ip"
+                textViewIP.text = if (ip.isNullOrEmpty()) "Public IP: —" else "Public IP: $ip"
             }
         }
     }
@@ -185,16 +178,19 @@ class MainActivity : AppCompatActivity() {
         CoroutineScope(Dispatchers.Main).launch {
             delay(7000)
             AccessibilityAutomationService.requestToggleAirplane()
-            // ✅ Tambah delay untuk network stabil
-            delay(9000)
+            // ✅ Tunda lebih lama untuk network stabil
+            delay(9000) // dari 5500 → 9000
             bringAppToForeground()
             delay(1000)
-            // ✅ Fetch IP selepas network stabil
+    
+            // ✅ FETCH IP DULU (dengan logik asal, tiada 'break')
             updateIP()
-            delay(1000)
+    
+            delay(1500)
             Toast.makeText(this@MainActivity, "Setting up VPN tunnel...", Toast.LENGTH_SHORT).show()
             requestVpnPermission()
             delay(2500)
+    
             rotateDNS()
             launchPandaApp()
             delay(2000)

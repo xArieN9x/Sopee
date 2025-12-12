@@ -18,9 +18,19 @@ import java.util.concurrent.Executors
 class AppMonitorVPNService : VpnService() {
     companion object {
         private var pandaActive = false
+        private var lastPacketTime = 0L // ✅ FIX #1: Track last packet
         private var dnsIndex = 0
         private var instance: AppMonitorVPNService? = null
-        fun isPandaActive() = pandaActive
+        
+        fun isPandaActive(): Boolean {
+            // ✅ FIX #1: Check timeout (3 seconds)
+            val now = System.currentTimeMillis()
+            if (now - lastPacketTime > 3000) {
+                pandaActive = false
+            }
+            return pandaActive
+        }
+        
         fun rotateDNS(dnsList: List<String>) {
             if (instance == null) return
             dnsIndex = (dnsIndex + 1) % dnsList.size
@@ -31,7 +41,7 @@ class AppMonitorVPNService : VpnService() {
 
     private var vpnInterface: ParcelFileDescriptor? = null
     private var forwardingActive = false
-    private val tcpConnections = ConcurrentHashMap<Int, Socket>()
+    private val tcpConnections = ConcurrentHashMap<String, Socket>() // ✅ FIX #2: String key
     private val workerPool = Executors.newCachedThreadPool()
     private val CHANNEL_ID = "panda_monitor_channel"
     private val NOTIF_ID = 1001
@@ -81,6 +91,7 @@ class AppMonitorVPNService : VpnService() {
             .addAddress("10.0.0.2", 32)
             .addRoute("0.0.0.0", 0)
             .addAllowedApplication("com.logistics.rider.foodpanda")
+            .addDisallowedApplication("com.example.allinoneflushapp") // ✅ FIX #5: CB bypass VPN
             .addDnsServer(dns)
 
         vpnInterface = try {
@@ -108,10 +119,10 @@ class AppMonitorVPNService : VpnService() {
                     val len = FileInputStream(fd).read(buffer)
                     if (len > 0) {
                         pandaActive = true
+                        lastPacketTime = System.currentTimeMillis() // ✅ FIX #1: Update time
                         handleOutboundPacket(buffer.copyOfRange(0, len))
                     }
                 } catch (e: Exception) {
-                    pandaActive = false
                     Thread.sleep(100)
                 }
             }
@@ -131,12 +142,15 @@ class AppMonitorVPNService : VpnService() {
             val destPort = ((packet[ipHeaderLen + 2].toInt() and 0xFF) shl 8) or (packet[ipHeaderLen + 3].toInt() and 0xFF)
             val payload = packet.copyOfRange(ipHeaderLen + 20, packet.size)
 
-            if (!tcpConnections.containsKey(srcPort)) {
+            // ✅ FIX #2: Unique connection key
+            val connKey = "$srcPort-$destIp-$destPort"
+
+            if (!tcpConnections.containsKey(connKey)) {
                 workerPool.execute {
                     try {
                         val socket = Socket(destIp, destPort)
                         socket.tcpNoDelay = true
-                        tcpConnections[srcPort] = socket
+                        tcpConnections[connKey] = socket
 
                         // Relay: Internet → App
                         workerPool.execute {
@@ -152,7 +166,7 @@ class AppMonitorVPNService : VpnService() {
                                     outStream.flush()
                                 }
                             } catch (_: Exception) {}
-                            tcpConnections.remove(srcPort)
+                            tcpConnections.remove(connKey)
                             socket.close()
                         }
 
@@ -161,11 +175,11 @@ class AppMonitorVPNService : VpnService() {
                             socket.getOutputStream().flush()
                         }
                     } catch (_: Exception) {
-                        tcpConnections.remove(srcPort)
+                        tcpConnections.remove(connKey)
                     }
                 }
             } else {
-                tcpConnections[srcPort]?.getOutputStream()?.let {
+                tcpConnections[connKey]?.getOutputStream()?.let {
                     it.write(payload)
                     it.flush()
                 }
@@ -188,8 +202,12 @@ class AppMonitorVPNService : VpnService() {
         packet[7] = 0x00
         packet[8] = 0xFF.toByte() // TTL
         packet[9] = 0x06 // Protocol = TCP
-        packet[10] = 0x00
-        packet[11] = 0x00 // Header checksum (boleh 0 untuk local)
+        
+        // ✅ FIX #3: Basic IP checksum
+        val ipChecksum = calculateIPChecksum(packet, 0, 20)
+        packet[10] = (ipChecksum ushr 8).toByte()
+        packet[11] = (ipChecksum and 0xFF).toByte()
+        
         val srcOctets = srcIp.split(".")
         packet[12] = srcOctets[0].toUByte().toByte()
         packet[13] = srcOctets[1].toUByte().toByte()
@@ -206,16 +224,79 @@ class AppMonitorVPNService : VpnService() {
         packet[21] = (srcPort and 0xFF).toByte()
         packet[22] = (destPort ushr 8).toByte()
         packet[23] = (destPort and 0xFF).toByte()
-        // Skip sequence/ack (tidak penting untuk tunnel local)
-        packet[32] = 0x01 // Window size min
-        packet[33] = 0x00
-        packet[34] = 0x00 // Checksum (boleh 0)
-        packet[35] = 0x00
-        packet[36] = 0x00 // Urgent pointer
+        // Skip sequence/ack for simplicity
+        packet[32] = 0x50 // Data offset (20 bytes)
+        packet[33] = 0x10 // Flags (ACK)
+        packet[34] = 0xFF.toByte() // Window size
+        packet[35] = 0xFF.toByte()
+        
+        // ✅ FIX #3: Basic TCP checksum
+        val tcpChecksum = calculateTCPChecksum(packet, 12, 20, payload)
+        packet[36] = (tcpChecksum ushr 8).toByte()
+        packet[37] = (tcpChecksum and 0xFF).toByte()
+        
+        packet[38] = 0x00 // Urgent pointer
+        packet[39] = 0x00
 
         // Payload
         System.arraycopy(payload, 0, packet, 40, payload.size)
         return packet
+    }
+
+    // ✅ FIX #3: IP checksum calculation
+    private fun calculateIPChecksum(data: ByteArray, offset: Int, length: Int): Int {
+        var sum = 0L
+        var i = offset
+        while (i < offset + length - 1) {
+            sum += ((data[i].toInt() and 0xFF) shl 8) or (data[i + 1].toInt() and 0xFF)
+            i += 2
+        }
+        if (i < offset + length) {
+            sum += (data[i].toInt() and 0xFF) shl 8
+        }
+        while (sum shr 16 != 0L) {
+            sum = (sum and 0xFFFF) + (sum shr 16)
+        }
+        return (sum.inv() and 0xFFFF).toInt()
+    }
+
+    // ✅ FIX #3: TCP checksum calculation (simplified)
+    private fun calculateTCPChecksum(ipPacket: ByteArray, ipOffset: Int, tcpOffset: Int, payload: ByteArray): Int {
+        var sum = 0L
+        
+        // Pseudo-header: src IP + dst IP
+        for (i in 0 until 8 step 2) {
+            sum += ((ipPacket[ipOffset + i].toInt() and 0xFF) shl 8) or (ipPacket[ipOffset + i + 1].toInt() and 0xFF)
+        }
+        
+        // Protocol + TCP length
+        sum += 6 // TCP protocol
+        sum += 20 + payload.size // TCP header + data length
+        
+        // TCP header (checksum field = 0)
+        val tcpStart = tcpOffset
+        for (i in tcpStart until tcpStart + 16 step 2) {
+            sum += ((ipPacket[i].toInt() and 0xFF) shl 8) or (ipPacket[i + 1].toInt() and 0xFF)
+        }
+        // Skip checksum field (offset 16-17)
+        for (i in tcpStart + 18 until tcpStart + 20 step 2) {
+            sum += ((ipPacket[i].toInt() and 0xFF) shl 8) or (ipPacket[i + 1].toInt() and 0xFF)
+        }
+        
+        // Payload
+        var i = 0
+        while (i < payload.size - 1) {
+            sum += ((payload[i].toInt() and 0xFF) shl 8) or (payload[i + 1].toInt() and 0xFF)
+            i += 2
+        }
+        if (i < payload.size) {
+            sum += (payload[i].toInt() and 0xFF) shl 8
+        }
+        
+        while (sum shr 16 != 0L) {
+            sum = (sum and 0xFFFF) + (sum shr 16)
+        }
+        return (sum.inv() and 0xFFFF).toInt()
     }
 
     override fun onDestroy() {
@@ -227,6 +308,7 @@ class AppMonitorVPNService : VpnService() {
             vpnInterface?.close()
         } catch (_: Exception) {}
         pandaActive = false
+        lastPacketTime = 0L
         instance = null
         super.onDestroy()
     }

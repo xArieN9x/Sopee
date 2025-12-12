@@ -134,7 +134,6 @@ class MainActivity : AppCompatActivity() {
         if (FloatingWidgetService.isRunning()) {
             stopService(Intent(this, FloatingWidgetService::class.java))
         }
-        // ✅ Gantikan Accessibility force-stop dengan cara selamat
         val am = getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager
         am.killBackgroundProcesses(pandaPackage)
         Handler(Looper.getMainLooper()).postDelayed({
@@ -143,13 +142,20 @@ class MainActivity : AppCompatActivity() {
         }, 1500)
     }
 
-    private fun updateIP() {
+    // ✅ Dengan retry & delay tambahan
+    private fun updateIP(maxRetry: Int = 3) {
         CoroutineScope(Dispatchers.IO).launch {
-            val ip = try {
-                URL("https://api.ipify.org").readText().trim()
-            } catch (e: Exception) { null }
+            var ip: String? = null
+            repeat(maxRetry) {
+                try {
+                    ip = URL("https://api.ipify.org").readText().trim()
+                    if (!ip.isNullOrBlank()) break
+                } catch (e: Exception) {
+                    delay(2000)
+                }
+            }
             withContext(Dispatchers.Main) {
-                textViewIP.text = if (ip.isNullOrEmpty()) "Public IP: —" else "Public IP: $ip"
+                textViewIP.text = if (ip.isNullOrBlank()) "Public IP: —" else "Public IP: $ip"
             }
         }
     }
@@ -179,18 +185,16 @@ class MainActivity : AppCompatActivity() {
         CoroutineScope(Dispatchers.Main).launch {
             delay(7000)
             AccessibilityAutomationService.requestToggleAirplane()
-            delay(5500)
+            // ✅ Tambah delay untuk network stabil
+            delay(9000)
             bringAppToForeground()
-            delay(500)
-    
-            // ✅ FETCH IP DULU SEBELUM START VPN
+            delay(1000)
+            // ✅ Fetch IP selepas network stabil
             updateIP()
             delay(1000)
-    
             Toast.makeText(this@MainActivity, "Setting up VPN tunnel...", Toast.LENGTH_SHORT).show()
             requestVpnPermission()
             delay(2500)
-    
             rotateDNS()
             launchPandaApp()
             delay(2000)

@@ -11,9 +11,6 @@ import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
 import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.net.DatagramPacket
-import java.net.DatagramSocket
-import java.net.InetAddress
 import java.net.Socket
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
@@ -21,7 +18,7 @@ import java.util.concurrent.Executors
 class AppMonitorVPNService : VpnService() {
     companion object {
         private var pandaActive = false
-        private var lastPacketTime = 0L
+        private var lastPacketTime = 0L // ✅ Timeout safety
         private var dnsIndex = 0
         private var instance: AppMonitorVPNService? = null
 
@@ -43,7 +40,7 @@ class AppMonitorVPNService : VpnService() {
 
     private var vpnInterface: ParcelFileDescriptor? = null
     private var forwardingActive = false
-    private val tcpConnections = ConcurrentHashMap<String, Socket>()
+    private val tcpConnections = ConcurrentHashMap<Int, Socket>()
     private val workerPool = Executors.newCachedThreadPool()
     private val CHANNEL_ID = "panda_monitor_channel"
     private val NOTIF_ID = 1001
@@ -93,7 +90,6 @@ class AppMonitorVPNService : VpnService() {
             .addAddress("10.0.0.2", 32)
             .addRoute("0.0.0.0", 0)
             .addAllowedApplication("com.logistics.rider.foodpanda")
-            // ❌ JANGAN GUNA addDisallowedApplication
             .addDnsServer(dns)
 
         vpnInterface = try {
@@ -135,14 +131,8 @@ class AppMonitorVPNService : VpnService() {
     private fun handleOutboundPacket(packet: ByteArray) {
         try {
             val ipHeaderLen = (packet[0].toInt() and 0x0F) * 4
-            if (ipHeaderLen < 20 || packet.size < ipHeaderLen + 8) return
-
+            if (ipHeaderLen < 20 || packet.size < ipHeaderLen + 20) return
             val protocol = packet[9].toInt() and 0xFF
-            if (protocol == 17) {
-                // ✅ Handle UDP (DNS)
-                forwardUdpPacket(packet, ipHeaderLen)
-                return
-            }
             if (protocol != 6) return // Hanya TCP
 
             val destIp = "${packet[16].toInt() and 0xFF}.${packet[17].toInt() and 0xFF}.${packet[18].toInt() and 0xFF}.${packet[19].toInt() and 0xFF}"
@@ -150,13 +140,12 @@ class AppMonitorVPNService : VpnService() {
             val destPort = ((packet[ipHeaderLen + 2].toInt() and 0xFF) shl 8) or (packet[ipHeaderLen + 3].toInt() and 0xFF)
             val payload = packet.copyOfRange(ipHeaderLen + 20, packet.size)
 
-            val connKey = "$srcPort-$destIp-$destPort"
-            if (!tcpConnections.containsKey(connKey)) {
+            if (!tcpConnections.containsKey(srcPort)) {
                 workerPool.execute {
                     try {
                         val socket = Socket(destIp, destPort)
                         socket.tcpNoDelay = true
-                        tcpConnections[connKey] = socket
+                        tcpConnections[srcPort] = socket
 
                         workerPool.execute {
                             val outStream = FileOutputStream(vpnInterface!!.fileDescriptor)
@@ -171,7 +160,7 @@ class AppMonitorVPNService : VpnService() {
                                     outStream.flush()
                                 }
                             } catch (_: Exception) {}
-                            tcpConnections.remove(connKey)
+                            tcpConnections.remove(srcPort)
                             socket.close()
                         }
 
@@ -180,28 +169,15 @@ class AppMonitorVPNService : VpnService() {
                             socket.getOutputStream().flush()
                         }
                     } catch (_: Exception) {
-                        tcpConnections.remove(connKey)
+                        tcpConnections.remove(srcPort)
                     }
                 }
             } else {
-                tcpConnections[connKey]?.getOutputStream()?.let {
+                tcpConnections[srcPort]?.getOutputStream()?.let {
                     it.write(payload)
                     it.flush()
                 }
             }
-        } catch (_: Exception) {}
-    }
-
-    private fun forwardUdpPacket(packet: ByteArray, ipHeaderLen: Int) {
-        try {
-            val destIp = "${packet[16].toInt() and 0xFF}.${packet[17].toInt() and 0xFF}.${packet[18].toInt() and 0xFF}.${packet[19].toInt() and 0xFF}"
-            val srcPort = ((packet[ipHeaderLen].toInt() and 0xFF) shl 8) or (packet[ipHeaderLen + 1].toInt() and 0xFF)
-            val destPort = ((packet[ipHeaderLen + 2].toInt() and 0xFF) shl 8) or (packet[ipHeaderLen + 3].toInt() and 0xFF)
-            val payload = packet.copyOfRange(ipHeaderLen + 8, packet.size)
-
-            val socket = DatagramSocket()
-            socket.send(DatagramPacket(payload, payload.size, InetAddress.getByName(destIp), destPort))
-            socket.close()
         } catch (_: Exception) {}
     }
 

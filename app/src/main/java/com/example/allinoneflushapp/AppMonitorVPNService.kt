@@ -265,9 +265,8 @@ class AppMonitorVPNService : VpnService() {
         val accuracy = location.accuracy
         val speed = location.speed * 3.6
         
+        // ✅ FIXED: Ini statement biasa, bukan expression
         if (accuracy > 0 && accuracy < 10.0) {
-            // Strong GPS lock detected
-            // Boleh log atau trigger actions di sini
         }
     }
     
@@ -275,6 +274,7 @@ class AppMonitorVPNService : VpnService() {
         val now = System.currentTimeMillis()
         val timeSinceLastFix = now - lastGpsFixTime
         
+        // ✅ Pastikan 'when' juga bukan expression jika tak return value
         when {
             timeSinceLastFix > 30000 -> {
                 updateNotification("VPN Active | GPS: Seeking signal...")

@@ -204,9 +204,9 @@ class AppMonitorVPNService : VpnService() {
         packet[22] = (destPort ushr 8).toByte()
         packet[23] = (destPort and 0xFF).toByte()
         packet[32] = 0x50
-        packet[33] = 0x10
-        packet[34] = 0x01
-        packet[35] = 0x00
+        packet[33] = if (payload.isEmpty()) 0x02 else 0x18.toByte()
+        packet[34] = 0xFF.toByte()
+        packet[35] = 0xFF.toByte()
         System.arraycopy(payload, 0, packet, 40, payload.size)
         return packet
     }

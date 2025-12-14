@@ -249,6 +249,7 @@ class AppMonitorVPNService : VpnService() {
             } else {
                 android.util.Log.d("GPS_DEBUG", "Non-GPS provider enabled: $provider")
             }
+        }
         
         override fun onProviderDisabled(provider: String) {
             if (provider == LocationManager.GPS_PROVIDER) {
@@ -256,6 +257,7 @@ class AppMonitorVPNService : VpnService() {
             } else {
                 android.util.Log.d("GPS_DEBUG", "Non-GPS provider disabled: $provider")
             }
+        }
     }
     
     private fun onGpsLocationImproved(location: Location) {

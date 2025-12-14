@@ -246,14 +246,16 @@ class AppMonitorVPNService : VpnService() {
         override fun onProviderEnabled(provider: String) {
             if (provider == LocationManager.GPS_PROVIDER) {
                 updateNotification("VPN Active | GPS: Provider Enabled")
+            } else {
+                android.util.Log.d("GPS_DEBUG", "Non-GPS provider enabled: $provider")
             }
-        }
         
         override fun onProviderDisabled(provider: String) {
             if (provider == LocationManager.GPS_PROVIDER) {
                 updateNotification("VPN Active | GPS: Provider Disabled ⚠️")
+            } else {
+                android.util.Log.d("GPS_DEBUG", "Non-GPS provider disabled: $provider")
             }
-        }
     }
     
     private fun onGpsLocationImproved(location: Location) {

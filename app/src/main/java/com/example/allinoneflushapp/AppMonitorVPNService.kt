@@ -109,14 +109,20 @@ class AppMonitorVPNService : VpnService() {
     
         val builder = Builder()
         builder.setSession("PandaMonitor")
-            .addAddress("192.168.77.2", 32)           // ✅ PAKAI IP BARU (elak conflict)
+            .addAddress("192.168.77.2", 32)           // ✅ PAKAI IP BARU
             .addRoute("0.0.0.0", 0)                    // ✅ ROUTE SEMUA TRAFFIC
-            .addDisallowedRoute("192.168.77.0", 24)    // ✅ ELAK LOCAL CONFLICT
             .addAllowedApplication("com.logistics.rider.foodpanda")
             .addDnsServer(dns)
             .addDnsServer("1.1.1.1")
-            .setBlocking(true)                         // ✅ FORCE BLOCK NON-VPN TRAFFIC
+            .setBlocking(true)                         // ✅ FORCE SEMUA TRAFFIC
             .setMtu(1500)
+    
+        // ✅ TAMBAH: Remove existing route yang conflict
+        try {
+            Runtime.getRuntime().exec("ip route del 10.0.0.0/8").waitFor()
+        } catch (e: Exception) {
+            android.util.Log.w("CB_VPN", "⚠️ Could not remove conflicting route")
+        }
     
         vpnInterface = try {
             val iface = builder.establish()

@@ -112,27 +112,18 @@ class AppMonitorVPNService : VpnService() {
         val builder = Builder()
         builder.setSession("PandaMonitor")
             .addAddress("10.0.0.2", 32)
-            // ✅ USE SPLIT ROUTES ONLY (remove /0)
-            .addRoute("0.0.0.0", 1)
-            .addRoute("128.0.0.0", 1)
+            .addRoute("0.0.0.0", 0) // ✅ 1) FOKUS: Gunakan SATU rute default penuh
             .addAllowedApplication("com.logistics.rider.foodpanda")
-            .addDnsServer(dns)
-            .addDnsServer("1.1.1.1")
-            .setMtu(1400)  // ✅ Lower for stability
+            .addDnsServer("208.67.222.222") // ✅ 2) Coba DNS pihak ketiga yang dikenal
+            .addDnsServer("208.67.220.220")
+            .addDnsServer(dns) // Simpan DNS asal sebagai cadangan
+            .setMtu(1400)
             .setConfigureIntent(PendingIntent.getActivity(this, 0, 
-                Intent(this, MainActivity::class.java), 
-                PendingIntent.FLAG_IMMUTABLE))
+                Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE))
     
         vpnInterface = try {
             val iface = builder.establish()
             android.util.Log.i("CB_VPN", "✅ VPN Interface CREATED")
-            
-            // Check routing after 2 seconds
-            Thread {
-                Thread.sleep(2000)
-                checkRoutingStatus()
-            }.start()
-            
             iface
         } catch (e: Exception) {
             android.util.Log.e("CB_VPN", "❌ VPN Failed: ${e.message}")

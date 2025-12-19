@@ -109,24 +109,25 @@ class AppMonitorVPNService : VpnService() {
     
         val builder = Builder()
         builder.setSession("PandaMonitor")
-            .addAddress("192.168.77.2", 32)           // ✅ PAKAI IP BARU
-            .addRoute("0.0.0.0", 0)                    // ✅ ROUTE SEMUA TRAFFIC
+            .addAddress("192.168.77.2", 32)
+            // ❌ JANGAN guna .addRoute() - dia tak work
             .addAllowedApplication("com.logistics.rider.foodpanda")
             .addDnsServer(dns)
             .addDnsServer("1.1.1.1")
-            .setBlocking(true)                         // ✅ FORCE SEMUA TRAFFIC
             .setMtu(1500)
-    
-        // ✅ TAMBAH: Remove existing route yang conflict
-        try {
-            Runtime.getRuntime().exec("ip route del 10.0.0.0/8").waitFor()
-        } catch (e: Exception) {
-            android.util.Log.w("CB_VPN", "⚠️ Could not remove conflicting route")
-        }
     
         vpnInterface = try {
             val iface = builder.establish()
             android.util.Log.i("CB_VPN", "✅ VPN Interface CREATED")
+            
+            // ✅ SET ROUTING MANUAL SETELAH VPN UP
+            try {
+                Runtime.getRuntime().exec(arrayOf("su", "-c", "ip route add default dev tun0")).waitFor()
+                android.util.Log.i("CB_VPN", "🎯 MANUAL ROUTE: default → tun0")
+            } catch (e: Exception) {
+                android.util.Log.e("CB_VPN", "❌ Failed to set manual route")
+            }
+            
             iface
         } catch (e: Exception) {
             android.util.Log.e("CB_VPN", "❌ VPN Failed: ${e.message}")

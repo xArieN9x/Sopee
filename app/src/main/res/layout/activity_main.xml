@@ -30,12 +30,12 @@
         android:layout_marginTop="24dp"
         android:layout_centerHorizontal="true"/>
 
-    <!-- DNS Display -->
+    <!-- [PERUBAHAN 1] DNS Display TUKAR kepada CoreEngine Status -->
     <TextView
-        android:id="@+id/textViewDNS"
+        android:id="@+id/textViewDNS" <!-- ID DIBIARKAN SAMA untuk compatibility -->
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="DNS: ..."
+        android:text="CoreEngine: ..." <!-- Teks ditukar -->
         android:textSize="16sp"
         android:textColor="#424242"
         android:layout_below="@id/textViewIP"
@@ -90,66 +90,105 @@
         android:layout_marginTop="16dp"
         android:layout_centerHorizontal="true"/>
 
-    <!-- Button Container -->
+    <!-- [PERUBAHAN 2 & 3] Button Container Rombak Susunan -->
     <LinearLayout
         android:id="@+id/buttonContainer"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:orientation="horizontal"
+        android:orientation="vertical" <!-- Tukar kepada VERTICAL -->
         android:layout_below="@id/labelControls"
         android:layout_marginTop="12dp"
         android:layout_centerHorizontal="true">
 
-        <!-- ON Button (Accessibility) -->
+        <!-- Baris Butang Atas: ON A dan ON ACS -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:gravity="center"
-            android:layout_marginRight="24dp">
+            android:orientation="horizontal"
+            android:layout_marginBottom="20dp"> <!-- Margin bawah untuk pisah baris -->
 
-            <Button
-                android:id="@+id/btnAccessibilityOn"
-                android:layout_width="70dp"
-                android:layout_height="70dp"
-                android:text="ON"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:backgroundTint="#4CAF50"/>
-
-            <TextView
+            <!-- BUTTON ON A (BARU) -->
+            <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Accessibility"
-                android:textSize="10sp"
-                android:textColor="#616161"
-                android:layout_marginTop="4dp"/>
+                android:orientation="vertical"
+                android:gravity="center"
+                android:layout_marginRight="32dp"> <!-- Margin antara butang -->
+                <Button
+                    android:id="@+id/btnOnA" <!-- ID BARU -->
+                    android:layout_width="70dp"
+                    android:layout_height="70dp"
+                    android:text="ON A"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:backgroundTint="#4CAF50"/> <!-- Warna hijau -->
+                <!-- Tiada label di bawah ON A -->
+            </LinearLayout>
+
+            <!-- BUTTON ON ACS (GANTI DARI btnAccessibilityOn) -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center">
+                <Button
+                    android:id="@+id/btnAccessibilityOn" <!-- ID ASAL dikekalkan -->
+                    android:layout_width="70dp"
+                    android:layout_height="70dp"
+                    android:text="ON ACS"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:backgroundTint="#FF9800"/> <!-- Warna oren, beza fungsi -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Accessibility"
+                    android:textSize="10sp"
+                    android:textColor="#616161"
+                    android:layout_marginTop="4dp"/>
+            </LinearLayout>
         </LinearLayout>
 
-        <!-- OFF Button (Force Close) -->
+        <!-- Baris Butang Bawah: ON B dan OFF -->
         <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:gravity="center">
+            android:orientation="horizontal">
 
-            <Button
-                android:id="@+id/btnForceCloseAll"
-                android:layout_width="70dp"
-                android:layout_height="70dp"
-                android:text="OFF"
-                android:textSize="14sp"
-                android:textStyle="bold"
-                android:backgroundTint="#F44336"/>
-
-            <TextView
+            <!-- BUTTON ON B (BARU) -->
+            <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Force Close"
-                android:textSize="10sp"
-                android:textColor="#616161"
-                android:layout_marginTop="4dp"/>
+                android:orientation="vertical"
+                android:gravity="center"
+                android:layout_marginRight="32dp">
+                <Button
+                    android:id="@+id/btnOnB" <!-- ID BARU -->
+                    android:layout_width="70dp"
+                    android:layout_height="70dp"
+                    android:text="ON B"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:backgroundTint="#2196F3"/> <!-- Warna biru -->
+                <!-- Tiada label di bawah ON B -->
+            </LinearLayout>
+
+            <!-- BUTTON OFF (PINDAH DARI btnForceCloseAll) -->
+            <LinearLayout
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:gravity="center">
+                <Button
+                    android:id="@+id/btnForceCloseAll" <!-- ID ASAL dikekalkan -->
+                    android:layout_width="70dp"
+                    android:layout_height="70dp"
+                    android:text="OFF"
+                    android:textSize="14sp"
+                    android:textStyle="bold"
+                    android:backgroundTint="#F44336"/> <!-- Warna merah -->
+                <!-- Tiada label di bawah OFF -->
+            </LinearLayout>
         </LinearLayout>
     </LinearLayout>
-
 </RelativeLayout>

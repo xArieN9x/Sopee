@@ -17,9 +17,6 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import kotlinx.coroutines.*
-import java.net.HttpURLConnection
-import java.net.InetAddress
-import java.net.URL
 
 class AppCoreEngService : Service() {
 
@@ -96,9 +93,6 @@ class AppCoreEngService : Service() {
         // Start foreground
         startForeground(NOTIFICATION_ID, createNotification())
 
-        // Apply DNS
-        applyDNS()
-
         // Acquire wakelock
         acquireWakeLock()
 
@@ -134,9 +128,6 @@ class AppCoreEngService : Service() {
         // Stop network conditioning
         stopNetworkConditioning()
 
-        // Restore DNS
-        restoreDNS()
-
         // Update floating widget
         startService(Intent(this, FloatingWidgetService::class.java).apply {
             action = FloatingWidgetService.ACTION_START_WIDGET
@@ -150,33 +141,6 @@ class AppCoreEngService : Service() {
         broadcastStatus()
         stopForeground(true)
         stopSelf()
-    }
-
-    private fun applyDNS() {
-        val dns = when (dnsType) {
-            "A" -> "156.154.70.1"
-            "B" -> "1.1.1.1"
-            else -> "8.8.8.8"
-        }
-
-        try {
-            Log.d(TAG, "Applying DNS: $dns")
-            // Note: DNS change without root is very limited on Android 10+
-            // This is a placeholder for system-level DNS change
-            // In real implementation, this would require VPN-based DNS or root access
-            
-            // For testing purposes, we'll just log it
-            val dnsResolved = InetAddress.getByName("google.com")
-            Log.d(TAG, "DNS resolution test: ${dnsResolved.hostAddress}")
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "DNS application failed", e)
-        }
-    }
-
-    private fun restoreDNS() {
-        Log.d(TAG, "Restoring default DNS")
-        // Placeholder for DNS restoration
     }
 
     private fun acquireWakeLock() {
@@ -231,8 +195,7 @@ class AppCoreEngService : Service() {
         keepAliveJob = CoroutineScope(Dispatchers.IO).launch {
             while (isActive) {
                 try {
-                    // Send keep-alive packet
-                    val connection = URL("https://www.google.com").openConnection() as HttpURLConnection
+                    val connection = java.net.URL("https://www.google.com").openConnection() as java.net.HttpURLConnection
                     connection.connectTimeout = 5000
                     connection.requestMethod = "HEAD"
                     connection.connect()
@@ -260,6 +223,13 @@ class AppCoreEngService : Service() {
             putExtra("gpsStatus", gpsStatus)
         }
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+        
+        // Update notification
+        if (isEngineRunning) {
+            val notification = createNotification()
+            val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            manager.notify(NOTIFICATION_ID, notification)
+        }
     }
 
     private fun createNotification(): Notification {

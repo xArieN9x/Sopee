@@ -1,78 +1,66 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools">
+    xmlns:tools="http://schemas.android.com/tools"
+    package="com.example.cedokbooster">
 
-    <!-- Internet + Network -->
+    <!-- Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <!-- Accessibility priority -->
-    <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE" />
-    <!-- Allow reading package info -->
-    <uses-permission
-        android:name="android.permission.QUERY_ALL_PACKAGES"
-        tools:ignore="QueryAllPackagesPermission" />
-    <!-- Usage stats -->
-    <uses-permission
-        android:name="android.permission.PACKAGE_USAGE_STATS"
-        tools:ignore="ProtectedPermissions" />
-    <!-- Foreground service -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <!-- For overlay popups -->
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <!-- Optional: log scan -->
-    <uses-permission android:name="android.permission.READ_LOGS" />
-    <!-- ❌ TAK ADA BIND_VPN_SERVICE DISINI -->
-
-    <!-- ################### PERMISSION BARU untuk CoreEngine ################### -->
-    <!-- ➕ GPS Layer -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <!-- ➕ System Layer: WakeLock -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <!-- ➕ Network Layer: Potentially change settings -->
-    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
-    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
-    <!-- ####################################################################### -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+    <uses-permission android:name="android.permission.WRITE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
 
     <application
         android:allowBackup="true"
-        android:theme="@style/Theme.AppCompat.Light"
-        android:usesCleartextTraffic="false"
-        android:supportsRtl="true">
+        android:icon="@mipmap/ic_launcher"
+        android:label="CedokBooster"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.AppCompat.Light.DarkActionBar"
+        android:usesCleartextTraffic="true">
 
-        <!-- Main UI -->
+        <!-- Main Activity -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTop">
+            android:screenOrientation="portrait">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
-        <!-- ❌ SERVICE VPN LAMA DIBUANG -->
-        <!-- <service android:name=".AppMonitorVPNService" ... /> -->
-
-        <!-- ################### SERVICE TERAS BARU: CoreEngine ################### -->
-        <!-- ➕ Gantikan VPN service dengan CoreEngine Service -->
+        <!-- Core Engine Service -->
         <service
             android:name=".AppCoreEngService"
+            android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="location|specialUse"> <!-- foregroundServiceType dikemaskini -->
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="network_conditioning" /> <!-- Nilai boleh diubah -->
-        </service>
-        <!-- ####################################################################### -->
+            android:foregroundServiceType="location" />
 
-        <!-- Accessibility automation -->
+        <!-- Anchor Keep-Alive Service -->
+        <service
+            android:name=".AnchorService"
+            android:enabled="true"
+            android:exported="false" />
+
+        <!-- Floating Widget Service -->
+        <service
+            android:name=".FloatingWidgetService"
+            android:enabled="true"
+            android:exported="false" />
+
+        <!-- Accessibility Service -->
         <service
             android:name=".AccessibilityAutomationService"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-            android:exported="true"
-            android:label="CBP Accessibility Engine">
+            android:enabled="true"
+            android:exported="false"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>
@@ -81,19 +69,6 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
-        <!-- AnchorService (Keep Alive) -->
-        <service
-            android:name=".AnchorService"
-            android:exported="false"
-            android:foregroundServiceType="specialUse">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="keep_alive" />
-        </service>
-
-        <!-- Floating Widget Service -->
-        <service
-            android:name=".FloatingWidgetService"
-            android:exported="false" />
     </application>
+
 </manifest>

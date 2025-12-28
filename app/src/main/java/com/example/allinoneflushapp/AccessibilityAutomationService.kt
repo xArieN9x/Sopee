@@ -1,6 +1,10 @@
 // AccessibilityAutomationService.kt
 package com.example.allinoneflushapp
 
+import android.accessibilityservice.AccessibilityServiceInfo  // Import yang hilang!
+import java.text.SimpleDateFormat  // Untuk SimpleDateFormat
+import java.util.Locale  // Untuk Locale
+
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.BroadcastReceiver

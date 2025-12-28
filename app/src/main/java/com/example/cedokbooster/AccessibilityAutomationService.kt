@@ -1,74 +1,52 @@
-// AccessibilityAutomationService.kt
-package com.example.allinoneflushapp
-
-import android.accessibilityservice.AccessibilityServiceInfo  // Import yang hilang!
-import java.text.SimpleDateFormat  // Untuk SimpleDateFormat
-import java.util.Locale  // Untuk Locale
+package com.example.cedokbooster
 
 import android.accessibilityservice.AccessibilityService
-import android.accessibilityservice.GestureDescription
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.graphics.Path
-import android.graphics.PixelFormat
-import android.os.*
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.util.Log
-import android.view.Gravity
-import android.view.LayoutInflater
-import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
-import android.view.accessibility.AccessibilityNodeInfo
-import android.widget.FrameLayout
-import android.widget.TextView
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
-import java.util.*
 
 class AccessibilityAutomationService : AccessibilityService() {
 
+    private val handler = Handler(Looper.getMainLooper())
+    private val pandaPackage = "com.foodpanda.android"
+
     companion object {
-        const val TAG = "AccessibilityAutomation"
-        private const val PACKAGE_PANDA = "com.logistics.rider.foodpanda" // Ganti dengan package name sebenar
-        private const val ACTION_DO_ALL_JOB = "DO_ALL_JOB_TRIGGER"
-        private const val ACTION_GPS_LOCK_ACHIEVED = "GPS_LOCK_ACHIEVED"
+        private const val TAG = "AccessibilityAutomation"
+        const val DO_ALL_JOB_TRIGGER = "com.example.cedokbooster.DO_ALL_JOB"
+        const val FORCE_CLOSE_PANDA = "com.example.cedokbooster.FORCE_CLOSE_PANDA"
     }
 
-    // Status & Flags
-    private var isAutomationRunning = false
-    private var isWaitingForGpsLock = false
-    private var currentDnsMode: String? = null // "A" atau "B"
-    private var retryCount = 0
-    private val MAX_RETRIES = 2
-
-    // Handler untuk delay dan retry
-    private lateinit var handler: Handler
-    private val automationRunnable = Runnable { startAutomationSequence() }
-
-    // Floating Widget (untuk debug/log)
-    private var floatingWindow: FrameLayout? = null
-    private var logTextView: TextView? = null
-
-    // Broadcast Receiver
-    private val broadcastReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            when (intent.action) {
-                ACTION_DO_ALL_JOB -> {
-                    Log.i(TAG, "Received DO_ALL_JOB trigger")
-                    if (isAutomationRunning) {
-                        logToFloatingWidget("Automation sedang berjalan, skip trigger baru")
-                        return
-                    }
-                    // Dapatkan DNS mode dari CoreEngine status
-                    currentDnsMode = getCurrentDnsModeFromEngine()
-                    startAutomationSequence()
+    private val jobReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                DO_ALL_JOB_TRIGGER -> {
+                    val currentDns = intent.getStringExtra("currentDns") ?: "A"
+                    Log.d(TAG, "DO_ALL_JOB_TRIGGER received, DNS: $currentDns")
+                    executeDoAllJobSequence(currentDns)
                 }
-                ACTION_GPS_LOCK_ACHIEVED -> {
-                    Log.i(TAG, "Received GPS_LOCK_ACHIEVED signal")
-                    isWaitingForGpsLock = false
-                    // Teruskan dengan langkah seterusnya selepas GPS lock
-                    handler.post { performPostGpsLockActions() }
+                FORCE_CLOSE_PANDA -> {
+                    Log.d(TAG, "FORCE_CLOSE_PANDA received")
+                    forceClosePanda()
+                }
+            }
+        }
+    }
+
+    private val gpsLockReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
+                AppCoreEngService.GPS_LOCK_ACHIEVED -> {
+                    Log.d(TAG, "GPS_LOCK_ACHIEVED received, launching Panda")
+                    handler.postDelayed({
+                        launchPanda()
+                    }, 2000)
                 }
             }
         }
@@ -76,313 +54,181 @@ class AccessibilityAutomationService : AccessibilityService() {
 
     override fun onCreate() {
         super.onCreate()
-        Log.d(TAG, "Service onCreate")
-        handler = Handler(Looper.getMainLooper())
-        setupBroadcastReceiver()
-        showFloatingDebugWidget()
-    }
-
-    override fun onServiceConnected() {
-        super.onServiceConnected()
-        Log.i(TAG, "Accessibility Service Connected")
-        logToFloatingWidget("Service Ready")
+        Log.d(TAG, "AccessibilityAutomationService created")
         
-        // Configure service (berdasarkan original code)
-        val config = serviceInfo.apply {
-            eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
-                        AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
-            feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-            flags = AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS or
-                   AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
-            notificationTimeout = 100
-        }
-        this.serviceInfo = config
-    }
-
-    private fun setupBroadcastReceiver() {
+        // Register receivers
         val filter = IntentFilter().apply {
-            addAction(ACTION_DO_ALL_JOB)
-            addAction(ACTION_GPS_LOCK_ACHIEVED)
+            addAction(DO_ALL_JOB_TRIGGER)
+            addAction(FORCE_CLOSE_PANDA)
         }
-        LocalBroadcastManager.getInstance(this).registerReceiver(broadcastReceiver, filter)
-        Log.d(TAG, "Broadcast receiver registered")
+        LocalBroadcastManager.getInstance(this).registerReceiver(jobReceiver, filter)
+
+        val gpsFilter = IntentFilter(AppCoreEngService.GPS_LOCK_ACHIEVED)
+        LocalBroadcastManager.getInstance(this).registerReceiver(gpsLockReceiver, gpsFilter)
     }
 
-    /**
-     * URUTAN AUTOMASI UTAMA (tanpa VPN dependency)
-     */
-    private fun startAutomationSequence() {
-        if (isAutomationRunning) {
-            Log.w(TAG, "Automation sequence already running")
-            return
-        }
-
-        Log.i(TAG, "=== STARTING AUTOMATION SEQUENCE ===")
-        logToFloatingWidget("Start Automation")
-        isAutomationRunning = true
-        retryCount = 0
-
-        // 1. FORCE CLOSE PANDA
-        handler.postDelayed({
-            if (isAppRunning(PACKAGE_PANDA)) {
-                forceCloseApp(PACKAGE_PANDA)
-                logToFloatingWidget("Force Close Panda")
-            }
-            clearAppCache(PACKAGE_PANDA)
-        }, 500)
-
-        // 2. TOGGLE AIRPLANE MODE (dengan delay)
-        handler.postDelayed({
-            toggleAirplaneMode(true)
-            logToFloatingWidget("Airplane ON")
-        }, 1500)
-
-        handler.postDelayed({
-            toggleAirplaneMode(false)
-            logToFloatingWidget("Airplane OFF")
-        }, 3500)
-
-        // 3. TUNGGU GPS LOCK (CoreEngine akan hantar signal)
-        handler.postDelayed({
-            logToFloatingWidget("Waiting GPS Lock...")
-            isWaitingForGpsLock = true
-            // Timeout untuk GPS lock (30 saat)
-            handler.postDelayed({
-                if (isWaitingForGpsLock) {
-                    Log.w(TAG, "GPS Lock timeout, continuing anyway")
-                    isWaitingForGpsLock = false
-                    performPostGpsLockActions()
-                }
-            }, 30000)
-        }, 5000)
-    }
-
-    /**
-     * LANGKAH SELEPAS GPS LOCK
-     */
-    private fun performPostGpsLockActions() {
-        Log.i(TAG, "Performing post-GPS lock actions")
-        
-        // 4. LAUNCH PANDA APP
-        handler.postDelayed({
-            launchApp(PACKAGE_PANDA)
-            logToFloatingWidget("Launching Panda")
-        }, 1000)
-
-        // 5. MONITOR PANDA LAUNCH & PERFORM SETUP JIKA PERLU
-        handler.postDelayed({
-            monitorPandaSetup()
-        }, 3000)
-
-        // 6. COMPLETION
-        handler.postDelayed({
-            isAutomationRunning = false
-            logToFloatingWidget("Automation Complete")
-            Log.i(TAG, "=== AUTOMATION SEQUENCE COMPLETE ===")
-            
-            // Hantar status completion ke MainActivity
-            sendAutomationCompleteBroadcast()
-        }, 8000)
-    }
-
-    /**
-     * MONITOR PANDA SETUP (tap allow/continue jika ada popup)
-     */
-    private fun monitorPandaSetup() {
-        handler.post(object : Runnable {
-            override fun run() {
-                val rootNode = rootInActiveWindow ?: return
-                
-                // Cari button Allow, Continue, OK, etc.
-                val allowButtons = listOf("allow", "teruskan", "ok", "continue", "setuju")
-                for (text in allowButtons) {
-                    val nodes = rootNode.findAccessibilityNodeInfosByText(text)
-                    if (nodes.isNotEmpty()) {
-                        nodes[0].performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                        logToFloatingWidget("Clicked: $text")
-                        break
-                    }
-                }
-                
-                // Check location permission popup
-                val locationNodes = rootNode.findAccessibilityNodeInfosByText("location")
-                if (locationNodes.isNotEmpty()) {
-                    // Cari button Allow dalam dialog yang sama
-                    val parent = locationNodes[0].parent
-                    parent?.let {
-                        val buttons = it.findAccessibilityNodeInfosByText("allow")
-                        if (buttons.isNotEmpty()) {
-                            buttons[0].performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                            logToFloatingWidget("Allowed location")
-                        }
-                    }
-                }
-                
-                // Ulang check setiap 1 saat untuk 5 kali
-                if (retryCount < 5) {
-                    retryCount++
-                    handler.postDelayed(this, 1000)
-                }
-            }
-        })
-    }
-
-    /**
-     * UTILITY FUNCTIONS (dari original code dengan penambahbaikan)
-     */
-    private fun isAppRunning(packageName: String): Boolean {
-        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
-        val runningProcesses = activityManager.runningAppProcesses ?: return false
-        return runningProcesses.any { it.processName == packageName }
-    }
-
-    private fun forceCloseApp(packageName: String) {
-        val intent = Intent(Intent.ACTION_MAIN)
-        intent.addCategory(Intent.CATEGORY_HOME)
-        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
-        startActivity(intent)
-        
-        handler.postDelayed({
-            val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
-            activityManager.killBackgroundProcesses(packageName)
-            Log.i(TAG, "Force closed: $packageName")
-        }, 300)
-    }
-
-    private fun clearAppCache(packageName: String) {
-        try {
-            val packageManager = packageManager
-            val applicationInfo = packageManager.getApplicationInfo(packageName, 0)
-            val clearcacheIntent = Intent(Intent.ACTION_DELETE)
-            clearcacheIntent.data = android.net.Uri.parse("package:${applicationInfo.packageName}")
-            clearcacheIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            startActivity(clearcacheIntent)
-            Log.i(TAG, "Cleared cache for: $packageName")
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to clear cache: ${e.message}")
-        }
-    }
-
-    private fun toggleAirplaneMode(turnOn: Boolean) {
-        try {
-            val isAirplaneMode = Settings.Global.getInt(
-                contentResolver,
-                Settings.Global.AIRPLANE_MODE_ON
-            ) != 0
-            
-            if (isAirplaneMode != turnOn) {
-                Settings.Global.putInt(
-                    contentResolver,
-                    Settings.Global.AIRPLANE_MODE_ON,
-                    if (turnOn) 1 else 0
-                )
-                
-                // Broadcast perubahan
-                val intent = Intent(Intent.ACTION_AIRPLANE_MODE_CHANGED)
-                intent.putExtra("state", turnOn)
-                sendBroadcast(intent)
-                Log.i(TAG, "Airplane mode ${if (turnOn) "ON" else "OFF"}")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to toggle airplane mode: ${e.message}")
-        }
-    }
-
-    private fun launchApp(packageName: String) {
-        try {
-            val intent = packageManager.getLaunchIntentForPackage(packageName)
-            if (intent != null) {
-                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-                startActivity(intent)
-                Log.i(TAG, "Launched app: $packageName")
-            } else {
-                Log.e(TAG, "No launch intent for: $packageName")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to launch app: ${e.message}")
-        }
-    }
-
-    private fun getCurrentDnsModeFromEngine(): String? {
-        // Method untuk dapatkan DNS mode dari CoreEngine
-        // Boleh implement dengan SharedPreferences atau Broadcast
-        return null // Temporary
-    }
-
-    private fun sendAutomationCompleteBroadcast() {
-        val intent = Intent("AUTOMATION_COMPLETE")
-        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
-    }
-
-    /**
-     * FLOATING DEBUG WIDGET (untuk monitor)
-     */
-    private fun showFloatingDebugWidget() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val layoutParams = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                PixelFormat.TRANSLUCENT
-            ).apply {
-                gravity = Gravity.TOP or Gravity.START
-                x = 50
-                y = 100
-            }
-
-            val inflater = getSystemService(LAYOUT_INFLATER_SERVICE) as LayoutInflater
-            floatingWindow = inflater.inflate(R.layout.floating_debug_widget, null) as FrameLayout
-            logTextView = floatingWindow?.findViewById(R.id.debug_text)
-
-            val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-            windowManager.addView(floatingWindow, layoutParams)
-            logToFloatingWidget("Widget Ready")
-        }
-    }
-
-    private fun logToFloatingWidget(message: String) {
-        handler.post {
-            val timestamp = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date())
-            val logMessage = "$timestamp: $message\n"
-            logTextView?.append(logMessage)
-            
-            // Keep only last 10 lines
-            val lines = logTextView?.text?.toString()?.lines()
-            if (lines != null && lines.size > 10) {
-                logTextView?.text = lines.takeLast(10).joinToString("\n")
-            }
-        }
-    }
-
-    /**
-     * ACCESSIBILITY SERVICE OVERRIDES
-     */
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Untuk monitor events jika perlu
-        event?.let {
-            if (it.packageName == PACKAGE_PANDA && it.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
-                Log.d(TAG, "Panda window changed: ${it.className}")
-            }
-        }
+        // Can be used for monitoring if needed
     }
 
     override fun onInterrupt() {
-        Log.i(TAG, "Service interrupted")
-        logToFloatingWidget("Service Interrupted")
+        Log.d(TAG, "Service interrupted")
+    }
+
+    private fun executeDoAllJobSequence(currentDns: String) {
+        Log.d(TAG, "Starting DO ALL JOB sequence...")
+
+        // Step 1: Force close Panda
+        forceClosePanda()
+        
+        handler.postDelayed({
+            // Step 2: Clear cache
+            clearPandaCache()
+        }, 1000)
+
+        handler.postDelayed({
+            // Step 3: Toggle airplane mode
+            toggleAirplaneMode()
+        }, 2000)
+
+        handler.postDelayed({
+            // Step 4: Wait for network/GPS
+            Log.d(TAG, "Waiting for network and GPS stabilization...")
+        }, 5000)
+
+        handler.postDelayed({
+            // Step 5: Launch Panda
+            launchPanda()
+        }, 8000)
+
+        handler.postDelayed({
+            // Step 6: Restart CoreEngine with same DNS
+            restartCoreEngine(currentDns)
+        }, 10000)
+    }
+
+    private fun forceClosePanda() {
+        try {
+            Log.d(TAG, "Force closing Panda app")
+            val am = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+            am.killBackgroundProcesses(pandaPackage)
+            
+            // Alternative method using shell command (requires FORCE_STOP permission)
+            // This won't work without root, but we try anyway
+            try {
+                Runtime.getRuntime().exec("am force-stop $pandaPackage")
+            } catch (e: Exception) {
+                Log.e(TAG, "Shell force-stop failed (expected on non-root)", e)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error force closing Panda", e)
+        }
+    }
+
+    private fun clearPandaCache() {
+        try {
+            Log.d(TAG, "Clearing Panda cache")
+            // This requires root or specific permissions
+            // Without root, we can only clear our own app's cache
+            // This is a placeholder
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = android.net.Uri.parse("package:$pandaPackage")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            // We don't actually start this as it would interrupt the flow
+            // Instead, we just log it
+            Log.d(TAG, "Cache clear simulated (requires manual action or root)")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error clearing cache", e)
+        }
+    }
+
+    private fun toggleAirplaneMode() {
+        try {
+            Log.d(TAG, "Toggling airplane mode")
+            
+            // Note: Changing airplane mode programmatically is restricted since Android 4.2
+            // This requires WRITE_SETTINGS permission and may not work on all devices
+            
+            val isAirplaneModeOn = Settings.Global.getInt(
+                contentResolver,
+                Settings.Global.AIRPLANE_MODE_ON, 0
+            ) != 0
+
+            // Toggle it
+            Settings.Global.putInt(
+                contentResolver,
+                Settings.Global.AIRPLANE_MODE_ON,
+                if (isAirplaneModeOn) 0 else 1
+            )
+
+            // Broadcast the change
+            val intent = Intent(Intent.ACTION_AIRPLANE_MODE_CHANGED)
+            intent.putExtra("state", !isAirplaneModeOn)
+            sendBroadcast(intent)
+
+            // Toggle back after 2 seconds
+            handler.postDelayed({
+                Settings.Global.putInt(
+                    contentResolver,
+                    Settings.Global.AIRPLANE_MODE_ON,
+                    if (isAirplaneModeOn) 1 else 0
+                )
+                val intent2 = Intent(Intent.ACTION_AIRPLANE_MODE_CHANGED)
+                intent2.putExtra("state", isAirplaneModeOn)
+                sendBroadcast(intent2)
+                Log.d(TAG, "Airplane mode toggled back")
+            }, 2000)
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Airplane mode toggle failed (requires permission)", e)
+        }
+    }
+
+    private fun launchPanda() {
+        try {
+            Log.d(TAG, "Launching Panda app")
+            val launchIntent = packageManager.getLaunchIntentForPackage(pandaPackage)
+            if (launchIntent != null) {
+                launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                startActivity(launchIntent)
+                Log.d(TAG, "Panda launched successfully")
+            } else {
+                Log.e(TAG, "Launch intent for Panda not found")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error launching Panda", e)
+        }
+    }
+
+    private fun restartCoreEngine(dnsType: String) {
+        Log.d(TAG, "Restarting CoreEngine with DNS: $dnsType")
+        
+        // Stop current engine
+        val stopIntent = Intent(this, AppCoreEngService::class.java).apply {
+            action = AppCoreEngService.ACTION_STOP_ENGINE
+        }
+        startService(stopIntent)
+
+        // Start new engine after 1 second
+        handler.postDelayed({
+            val startIntent = Intent(this, AppCoreEngService::class.java).apply {
+                action = AppCoreEngService.ACTION_START_ENGINE
+                putExtra("dnsType", dnsType)
+            }
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                startForegroundService(startIntent)
+            } else {
+                startService(startIntent)
+            }
+            Log.d(TAG, "CoreEngine restarted")
+        }, 1000)
     }
 
     override fun onDestroy() {
-        Log.d(TAG, "Service onDestroy")
-        LocalBroadcastManager.getInstance(this).unregisterReceiver(broadcastReceiver)
-        
-        // Remove floating widget
-        floatingWindow?.let {
-            val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-            windowManager.removeView(it)
-        }
-        
-        handler.removeCallbacks(automationRunnable)
         super.onDestroy()
+        LocalBroadcastManager.getInstance(this).unregisterReceiver(jobReceiver)
+        LocalBroadcastManager.getInstance(this).unregisterReceiver(gpsLockReceiver)
+        Log.d(TAG, "AccessibilityAutomationService destroyed")
     }
 }

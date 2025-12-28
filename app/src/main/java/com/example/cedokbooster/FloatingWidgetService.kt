@@ -9,7 +9,6 @@ import android.os.IBinder
 import android.util.Log
 import android.view.*
 import android.widget.TextView
-import androidx.core.content.ContextCompat
 
 class FloatingWidgetService : Service() {
 
@@ -81,9 +80,9 @@ class FloatingWidgetService : Service() {
     private fun updateWidgetColor() {
         floatingView?.findViewById<TextView>(R.id.tvWidget)?.apply {
             if (isActive) {
-                setBackgroundColor(Color.GREEN)
+                setBackgroundColor(Color.parseColor("#8000FF00")) // Green 50% opacity
             } else {
-                setBackgroundColor(Color.RED)
+                setBackgroundColor(Color.parseColor("#80FF0000")) // Red 50% opacity
             }
         }
     }
@@ -113,7 +112,6 @@ class FloatingWidgetService : Service() {
                     val deltaX = event.rawX - initialTouchX
                     val deltaY = event.rawY - initialTouchY
                     
-                    // If it's a click (not a drag)
                     if (Math.abs(deltaX) < 10 && Math.abs(deltaY) < 10) {
                         openMainActivity()
                     }

@@ -32,10 +32,10 @@
 
     <!-- [PERUBAHAN 1] DNS Display TUKAR kepada CoreEngine Status -->
     <TextView
-        android:id="@+id/textViewDNS" <!-- ID DIBIARKAN SAMA untuk compatibility -->
+        android:id="@+id/textViewDNS"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="CoreEngine: ..." <!-- Teks ditukar -->
+        android:text="CoreEngine: ..."
         android:textSize="16sp"
         android:textColor="#424242"
         android:layout_below="@id/textViewIP"
@@ -95,7 +95,7 @@
         android:id="@+id/buttonContainer"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:orientation="vertical" <!-- Tukar kepada VERTICAL -->
+        android:orientation="vertical"
         android:layout_below="@id/labelControls"
         android:layout_marginTop="12dp"
         android:layout_centerHorizontal="true">
@@ -105,7 +105,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_marginBottom="20dp"> <!-- Margin bawah untuk pisah baris -->
+            android:layout_marginBottom="20dp">
 
             <!-- BUTTON ON A (BARU) -->
             <LinearLayout
@@ -113,15 +113,15 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:gravity="center"
-                android:layout_marginRight="32dp"> <!-- Margin antara butang -->
+                android:layout_marginRight="32dp">
                 <Button
-                    android:id="@+id/btnOnA" <!-- ID BARU -->
+                    android:id="@+id/btnOnA"
                     android:layout_width="70dp"
                     android:layout_height="70dp"
                     android:text="ON A"
                     android:textSize="14sp"
                     android:textStyle="bold"
-                    android:backgroundTint="#4CAF50"/> <!-- Warna hijau -->
+                    android:backgroundTint="#4CAF50"/>
                 <!-- Tiada label di bawah ON A -->
             </LinearLayout>
 
@@ -132,13 +132,13 @@
                 android:orientation="vertical"
                 android:gravity="center">
                 <Button
-                    android:id="@+id/btnAccessibilityOn" <!-- ID ASAL dikekalkan -->
+                    android:id="@+id/btnAccessibilityOn"
                     android:layout_width="70dp"
                     android:layout_height="70dp"
                     android:text="ON ACS"
                     android:textSize="14sp"
                     android:textStyle="bold"
-                    android:backgroundTint="#FF9800"/> <!-- Warna oren, beza fungsi -->
+                    android:backgroundTint="#FF9800"/>
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
@@ -163,13 +163,13 @@
                 android:gravity="center"
                 android:layout_marginRight="32dp">
                 <Button
-                    android:id="@+id/btnOnB" <!-- ID BARU -->
+                    android:id="@+id/btnOnB"
                     android:layout_width="70dp"
                     android:layout_height="70dp"
                     android:text="ON B"
                     android:textSize="14sp"
                     android:textStyle="bold"
-                    android:backgroundTint="#2196F3"/> <!-- Warna biru -->
+                    android:backgroundTint="#2196F3"/>
                 <!-- Tiada label di bawah ON B -->
             </LinearLayout>
 
@@ -180,13 +180,13 @@
                 android:orientation="vertical"
                 android:gravity="center">
                 <Button
-                    android:id="@+id/btnForceCloseAll" <!-- ID ASAL dikekalkan -->
+                    android:id="@+id/btnForceCloseAll"
                     android:layout_width="70dp"
                     android:layout_height="70dp"
                     android:text="OFF"
                     android:textSize="14sp"
                     android:textStyle="bold"
-                    android:backgroundTint="#F44336"/> <!-- Warna merah -->
+                    android:backgroundTint="#F44336"/>
                 <!-- Tiada label di bawah OFF -->
             </LinearLayout>
         </LinearLayout>

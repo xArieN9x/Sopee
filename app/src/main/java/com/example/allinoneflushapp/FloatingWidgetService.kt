@@ -1,6 +1,8 @@
 package com.example.allinoneflushapp
 
+import android.app.ActivityManager
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.Build
@@ -9,7 +11,6 @@ import android.view.*
 import android.widget.ImageView
 import android.widget.TextView
 import kotlinx.coroutines.*
-import androidx.core.content.ContextCompat
 
 class FloatingWidgetService : Service() {
 
@@ -18,9 +19,15 @@ class FloatingWidgetService : Service() {
     private var bubbleImage: ImageView? = null
     private var bubbleText: TextView? = null
 
+    // Coroutine untuk monitoring status
+    private var monitoringJob: Job? = null
+    private var isMonitoring = true
+
     companion object {
         private var instance: FloatingWidgetService? = null
         fun isRunning() = instance != null
+        
+        // Fungsi untuk update warna dari luar (contoh: dari CoreEngine)
         fun updateBubbleColor(isActive: Boolean) {
             instance?.updateColor(isActive)
         }
@@ -32,15 +39,17 @@ class FloatingWidgetService : Service() {
         super.onCreate()
         instance = this
 
+        // Inflate view dari layout
         floatingView = LayoutInflater.from(this).inflate(R.layout.widget_layout, null)
         bubbleImage = floatingView?.findViewById(R.id.floatingBubble)
         bubbleText = floatingView?.findViewById(R.id.bubbleText)
 
-        val layoutFlag =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            else
-                WindowManager.LayoutParams.TYPE_PHONE
+        // Setup window parameters
+        val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        } else {
+            WindowManager.LayoutParams.TYPE_PHONE
+        }
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -54,10 +63,18 @@ class FloatingWidgetService : Service() {
         params.x = 0
         params.y = 100
 
+        // Add view ke window manager
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
         windowManager?.addView(floatingView, params)
 
-        // Drag + click listener
+        // Setup drag and click listener
+        setupTouchListener(params)
+
+        // Start monitoring status
+        startStatusMonitor()
+    }
+
+    private fun setupTouchListener(params: WindowManager.LayoutParams) {
         floatingView?.setOnTouchListener(object : View.OnTouchListener {
             private var initialX = 0
             private var initialY = 0
@@ -85,6 +102,7 @@ class FloatingWidgetService : Service() {
                         val diffX = Math.abs(event.rawX - initialTouchX)
                         val diffY = Math.abs(event.rawY - initialTouchY)
 
+                        // Jika click (bukan drag), buka MainActivity
                         if (diffX < 10 && diffY < 10) openMainActivity()
                         return true
                     }
@@ -92,33 +110,62 @@ class FloatingWidgetService : Service() {
                 return false
             }
         })
-
-        startStatusMonitor()
     }
 
     private fun updateColor(isActive: Boolean) {
-        bubbleImage?.setImageResource(
-            if (isActive) R.drawable.green_smooth else R.drawable.red_smooth
-        )
+        // Update warna bubble di main thread
+        CoroutineScope(Dispatchers.Main).launch {
+            bubbleImage?.setImageResource(
+                if (isActive) R.drawable.green_smooth else R.drawable.red_smooth
+            )
+        }
     }
 
     private fun startStatusMonitor() {
-        CoroutineScope(Dispatchers.IO).launch {
-            while (isEngineRunning) { // Guna status engine sendiri
-                // Ganti dengan logic check Panda app yang baru
-                val active = isAppRunning("com.logistics.rider.foodpanda") // Contoh: guna fungsi dari AccessibilityService
-                withContext(Dispatchers.Main) {
-                    // updateColor(active) // Optional: update warna jika ada fungsi ini
+        // Gunakan coroutine untuk monitor status
+        monitoringJob = CoroutineScope(Dispatchers.IO).launch {
+            while (isMonitoring) {
+                try {
+                    // Check jika CoreEngine sedang running
+                    val isEngineRunning = checkCoreEngineStatus()
+                    
+                    // Check jika app Panda sedang running (optional)
+                    val isPandaRunning = isAppRunning("com.logistics.rider.foodpanda")
+                    
+                    // Update warna berdasarkan status (contoh: hijau jika kedua-dua true)
+                    val shouldBeGreen = isEngineRunning && isPandaRunning
+                    
+                    withContext(Dispatchers.Main) {
+                        bubbleImage?.setImageResource(
+                            if (shouldBeGreen) R.drawable.green_smooth else R.drawable.red_smooth
+                        )
+                    }
+                    
+                    delay(1500) // Check setiap 1.5 saat
+                } catch (e: Exception) {
+                    // Log error jika perlu
+                    e.printStackTrace()
+                    delay(5000) // Delay lebih lama jika ada error
                 }
-                delay(1500)
             }
         }
     }
-    
-    // Tambah fungsi helper jika perlu
+
+    // Fungsi untuk check status CoreEngine
+    private fun checkCoreEngineStatus(): Boolean {
+        // Cara 1: Guna LocalBroadcast untuk dapat status dari CoreEngine
+        // Untuk sekarang, return false dulu - akan diupdate nanti
+        return false
+    }
+
+    // Fungsi helper untuk check app running
     private fun isAppRunning(packageName: String): Boolean {
-        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        return activityManager.runningAppProcesses?.any { it.processName == packageName } == true
+        return try {
+            val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+            activityManager.runningAppProcesses?.any { it.processName == packageName } == true
+        } catch (e: Exception) {
+            false
+        }
     }
 
     private fun openMainActivity() {
@@ -128,8 +175,16 @@ class FloatingWidgetService : Service() {
     }
 
     override fun onDestroy() {
+        // Stop monitoring
+        isMonitoring = false
+        monitoringJob?.cancel()
+        
+        // Remove view dari window
         floatingView?.let { windowManager?.removeView(it) }
+        
+        // Clear instance
         instance = null
+        
         super.onDestroy()
     }
 }

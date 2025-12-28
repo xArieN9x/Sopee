@@ -30,7 +30,7 @@ class AccessibilityAutomationService : AccessibilityService() {
 
     companion object {
         const val TAG = "AccessibilityAutomation"
-        private const val PACKAGE_PANDA = "com.pandafood" // Ganti dengan package name sebenar
+        private const val PACKAGE_PANDA = "com.logistics.rider.foodpanda" // Ganti dengan package name sebenar
         private const val ACTION_DO_ALL_JOB = "DO_ALL_JOB_TRIGGER"
         private const val ACTION_GPS_LOCK_ACHIEVED = "GPS_LOCK_ACHIEVED"
     }

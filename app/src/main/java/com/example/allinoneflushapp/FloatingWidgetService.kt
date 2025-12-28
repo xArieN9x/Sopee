@@ -104,12 +104,21 @@ class FloatingWidgetService : Service() {
 
     private fun startStatusMonitor() {
         CoroutineScope(Dispatchers.IO).launch {
-            while (isRunning()) {
-                val active = AppMonitorVPNService.isPandaActive()
-                withContext(Dispatchers.Main) { updateColor(active) }
+            while (isEngineRunning) { // Guna status engine sendiri
+                // Ganti dengan logic check Panda app yang baru
+                val active = isAppRunning("com.logistics.rider.foodpanda") // Contoh: guna fungsi dari AccessibilityService
+                withContext(Dispatchers.Main) {
+                    // updateColor(active) // Optional: update warna jika ada fungsi ini
+                }
                 delay(1500)
             }
         }
+    }
+    
+    // Tambah fungsi helper jika perlu
+    private fun isAppRunning(packageName: String): Boolean {
+        val activityManager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        return activityManager.runningAppProcesses?.any { it.processName == packageName } == true
     }
 
     private fun openMainActivity() {

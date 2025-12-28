@@ -15,8 +15,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
-import java.net.URL
-import kotlin.concurrent.thread
+import kotlinx.coroutines.*
 
 class MainActivity : AppCompatActivity() {
 
@@ -30,6 +29,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnOff: Button
 
     private var currentDns: String = "none"
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
     companion object {
         private const val TAG = "MainActivity"
@@ -58,7 +58,6 @@ class MainActivity : AppCompatActivity() {
         fetchPublicIp()
         requestOverlayPermission()
 
-        // Register receiver
         val filter = IntentFilter(AppCoreEngService.CORE_ENGINE_STATUS_UPDATE)
         LocalBroadcastManager.getInstance(this).registerReceiver(statusReceiver, filter)
     }
@@ -180,7 +179,6 @@ class MainActivity : AppCompatActivity() {
                 "CoreEngine: Disabled"
             }
 
-            // Update indicator
             when {
                 !isRunning -> {
                     viewIndicator.setBackgroundResource(R.drawable.red_circle)
@@ -199,17 +197,24 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun fetchPublicIp() {
-        thread {
+        CoroutineScope(Dispatchers.IO).launch {
+            var ip: String? = null
             try {
-                val ip = URL("https://api.ipify.org").readText()
-                runOnUiThread {
-                    tvPublicIp.text = "Public IP: $ip"
+                val url = URL("https://1.1.1.1/cdn-cgi/trace")
+                val text = url.readText().trim()
+                // Format: ip=123.123.123.123
+                val ipLine = text.lines().find { it.startsWith("ip=") }
+                ip = ipLine?.substringAfter("=")?.trim()
+            } catch (e1: Exception) {
+                // Fallback to ipify jika 1.1.1.1 gagal
+                try {
+                    ip = URL("https://api.ipify.org").readText().trim()
+                } catch (e2: Exception) {
+                    ip = null
                 }
-            } catch (e: Exception) {
-                runOnUiThread {
-                    tvPublicIp.text = "Public IP: Unable to fetch"
-                }
-                Log.e(TAG, "Error fetching public IP", e)
+            }
+            withContext(Dispatchers.Main) {
+                textViewIP.text = if (ip.isNullOrEmpty()) "Public IP: —" else "Public IP: $ip"
             }
         }
     }
@@ -229,6 +234,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        scope.cancel()
         LocalBroadcastManager.getInstance(this).unregisterReceiver(statusReceiver)
     }
 }

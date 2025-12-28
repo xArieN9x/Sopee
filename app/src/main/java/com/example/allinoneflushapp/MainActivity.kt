@@ -13,6 +13,9 @@ import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 
+import android.util.Log
+import java.util.Locale
+
 class MainActivity : AppCompatActivity() {
 
     // UI Components

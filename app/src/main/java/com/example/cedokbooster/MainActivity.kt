@@ -200,7 +200,7 @@ class MainActivity : AppCompatActivity() {
         CoroutineScope(Dispatchers.IO).launch {
             var ip: String? = null
             try {
-                val url = URL("https://1.1.1.1/cdn-cgi/trace")
+                val url = java.net.URL("https://1.1.1.1/cdn-cgi/trace")
                 val text = url.readText().trim()
                 // Format: ip=123.123.123.123
                 val ipLine = text.lines().find { it.startsWith("ip=") }
@@ -208,13 +208,13 @@ class MainActivity : AppCompatActivity() {
             } catch (e1: Exception) {
                 // Fallback to ipify jika 1.1.1.1 gagal
                 try {
-                    ip = URL("https://api.ipify.org").readText().trim()
+                    ip = java.net.URL("https://api.ipify.org").readText().trim()
                 } catch (e2: Exception) {
                     ip = null
                 }
             }
             withContext(Dispatchers.Main) {
-                textViewIP.text = if (ip.isNullOrEmpty()) "Public IP: —" else "Public IP: $ip"
+                tvPublicIp.text = if (ip.isNullOrEmpty()) "Public IP: —" else "Public IP: $ip"
             }
         }
     }

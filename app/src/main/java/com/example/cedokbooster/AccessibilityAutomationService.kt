@@ -7,7 +7,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Handler
 import android.os.Looper
-import android.provider.Settings
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
@@ -15,7 +14,7 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager
 class AccessibilityAutomationService : AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
-    private val pandaPackage = "com.foodpanda.android"
+    private val pandaPackage = "com.logistics.rider.foodpanda"
 
     companion object {
         private const val TAG = "AccessibilityAutomation"
@@ -56,7 +55,6 @@ class AccessibilityAutomationService : AccessibilityService() {
         super.onCreate()
         Log.d(TAG, "AccessibilityAutomationService created")
         
-        // Register receivers
         val filter = IntentFilter().apply {
             addAction(DO_ALL_JOB_TRIGGER)
             addAction(FORCE_CLOSE_PANDA)
@@ -67,9 +65,7 @@ class AccessibilityAutomationService : AccessibilityService() {
         LocalBroadcastManager.getInstance(this).registerReceiver(gpsLockReceiver, gpsFilter)
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Can be used for monitoring if needed
-    }
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
 
     override fun onInterrupt() {
         Log.d(TAG, "Service interrupted")
@@ -82,29 +78,19 @@ class AccessibilityAutomationService : AccessibilityService() {
         forceClosePanda()
         
         handler.postDelayed({
-            // Step 2: Clear cache
-            clearPandaCache()
-        }, 1000)
+            // Step 2: Wait for GPS
+            Log.d(TAG, "Waiting for GPS stabilization...")
+        }, 3000)
 
         handler.postDelayed({
-            // Step 3: Toggle airplane mode
-            toggleAirplaneMode()
-        }, 2000)
-
-        handler.postDelayed({
-            // Step 4: Wait for network/GPS
-            Log.d(TAG, "Waiting for network and GPS stabilization...")
+            // Step 3: Launch Panda
+            launchPanda()
         }, 5000)
 
         handler.postDelayed({
-            // Step 5: Launch Panda
-            launchPanda()
-        }, 8000)
-
-        handler.postDelayed({
-            // Step 6: Restart CoreEngine with same DNS
+            // Step 4: Restart CoreEngine
             restartCoreEngine(currentDns)
-        }, 10000)
+        }, 7000)
     }
 
     private fun forceClosePanda() {
@@ -112,76 +98,9 @@ class AccessibilityAutomationService : AccessibilityService() {
             Log.d(TAG, "Force closing Panda app")
             val am = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
             am.killBackgroundProcesses(pandaPackage)
-            
-            // Alternative method using shell command (requires FORCE_STOP permission)
-            // This won't work without root, but we try anyway
-            try {
-                Runtime.getRuntime().exec("am force-stop $pandaPackage")
-            } catch (e: Exception) {
-                Log.e(TAG, "Shell force-stop failed (expected on non-root)", e)
-            }
+            Log.d(TAG, "Panda force closed successfully")
         } catch (e: Exception) {
             Log.e(TAG, "Error force closing Panda", e)
-        }
-    }
-
-    private fun clearPandaCache() {
-        try {
-            Log.d(TAG, "Clearing Panda cache")
-            // This requires root or specific permissions
-            // Without root, we can only clear our own app's cache
-            // This is a placeholder
-            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = android.net.Uri.parse("package:$pandaPackage")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            // We don't actually start this as it would interrupt the flow
-            // Instead, we just log it
-            Log.d(TAG, "Cache clear simulated (requires manual action or root)")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error clearing cache", e)
-        }
-    }
-
-    private fun toggleAirplaneMode() {
-        try {
-            Log.d(TAG, "Toggling airplane mode")
-            
-            // Note: Changing airplane mode programmatically is restricted since Android 4.2
-            // This requires WRITE_SETTINGS permission and may not work on all devices
-            
-            val isAirplaneModeOn = Settings.Global.getInt(
-                contentResolver,
-                Settings.Global.AIRPLANE_MODE_ON, 0
-            ) != 0
-
-            // Toggle it
-            Settings.Global.putInt(
-                contentResolver,
-                Settings.Global.AIRPLANE_MODE_ON,
-                if (isAirplaneModeOn) 0 else 1
-            )
-
-            // Broadcast the change
-            val intent = Intent(Intent.ACTION_AIRPLANE_MODE_CHANGED)
-            intent.putExtra("state", !isAirplaneModeOn)
-            sendBroadcast(intent)
-
-            // Toggle back after 2 seconds
-            handler.postDelayed({
-                Settings.Global.putInt(
-                    contentResolver,
-                    Settings.Global.AIRPLANE_MODE_ON,
-                    if (isAirplaneModeOn) 1 else 0
-                )
-                val intent2 = Intent(Intent.ACTION_AIRPLANE_MODE_CHANGED)
-                intent2.putExtra("state", isAirplaneModeOn)
-                sendBroadcast(intent2)
-                Log.d(TAG, "Airplane mode toggled back")
-            }, 2000)
-
-        } catch (e: Exception) {
-            Log.e(TAG, "Airplane mode toggle failed (requires permission)", e)
         }
     }
 

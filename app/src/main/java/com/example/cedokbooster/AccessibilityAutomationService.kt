@@ -295,33 +295,52 @@ class AccessibilityAutomationService : AccessibilityService() {
 
     private fun toggleAirplaneMode(turnOn: Boolean) {
         handler.post {
-            try {
+            // 1. Buka Quick Settings
+            performGlobalAction(AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS)
+            Log.d(TAG, "Quick Settings opened")
+            
+            // 2. Tunggu 700ms untuk panel load
+            handler.postDelayed({
+                // List keyword untuk butang Airplane Mode
+                val airplaneKeys = arrayOf(
+                    "Airplane mode", "Airplane mode ", "Airplane", 
+                    "Mod Pesawat", "Mod Penerbangan", "Aeroplane mode"
+                )
+                
                 if (turnOn) {
-                    Settings.Global.putInt(
-                        contentResolver,
-                        Settings.Global.AIRPLANE_MODE_ON,
-                        1
-                    )
-                    val intent = Intent(Intent.ACTION_AIRPLANE_MODE_CHANGED).apply {
-                        putExtra("state", true)
+                    Log.d(TAG, "Turning Airplane Mode ON")
+                    // Click untuk ON (pastikan dalam keadaan OFF dulu)
+                    val clicked = findAndClick(*airplaneKeys, maxRetries = 3)
+                    if (!clicked) {
+                        // Fallback: cuba keyword "Airplane" sahaja
+                        findAndClick("Airplane", maxRetries = 3)
                     }
-                    sendBroadcast(intent)
-                    Log.d(TAG, "Airplane Mode turned ON")
+                    
+                    // Tunggu 4 saat untuk mode aktif sepenuhnya
+                    Thread.sleep(4000)
+                    
+                    // Sekarang click lagi sekali untuk OFF (jika sequence nak OFF)
+                    // TAPI ini untuk ON sahaja, OFF akan handle oleh function lain
+                    
                 } else {
-                    Settings.Global.putInt(
-                        contentResolver,
-                        Settings.Global.AIRPLANE_MODE_ON,
-                        0
-                    )
-                    val intent = Intent(Intent.ACTION_AIRPLANE_MODE_CHANGED).apply {
-                        putExtra("state", false)
+                    Log.d(TAG, "Turning Airplane Mode OFF")
+                    // Click untuk OFF (pastikan dalam keadaan ON dulu)
+                    val clicked = findAndClick(*airplaneKeys, maxRetries = 3)
+                    if (!clicked) {
+                        findAndClick("Airplane", maxRetries = 3)
                     }
-                    sendBroadcast(intent)
-                    Log.d(TAG, "Airplane Mode turned OFF")
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error toggling airplane mode: ${e.message}")
-            }
+                
+                // 3. Tutup Quick Settings & balik ke HOME
+                handler.postDelayed({
+                    performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                    handler.postDelayed({
+                        performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+                        Log.d(TAG, "Airplane Mode toggle complete")
+                    }, 300)
+                }, 1000)
+                
+            }, 700) // Delay 700ms selepas buka Quick Settings
         }
     }
 

@@ -170,31 +170,29 @@ class AccessibilityAutomationService : AccessibilityService() {
         
         Log.i(TAG, "=== STARTING AUTOMATION SEQUENCE ===")
         isAutomationRunning = true
-    
+        
         Log.d(TAG, "Step 1: Force Stop + Clear Cache")
         performForceCloseAndClearCache()
         
+        // ⏱️ TIMING BARU: 7000ms (dari 10000ms)
         handler.postDelayed({
-            Log.d(TAG, "Step 2: Airplane Mode ON")
+            Log.d(TAG, "Step 2: Airplane Mode ON→OFF")
             toggleAirplaneMode(true)
-        }, 10000)
+        }, 7000)
         
+        // ⏱️ TIMING BARU: 14000ms (dari 18000ms)
         handler.postDelayed({
-            Log.d(TAG, "Step 3: Airplane Mode OFF")
-            toggleAirplaneMode(false)
-        }, 18000)
-        
-        handler.postDelayed({
-            Log.d(TAG, "Step 4: Restarting CoreEngine")
+            Log.d(TAG, "Step 3: Restarting CoreEngine")
             restartCoreEngine()
-        }, 23000)
+        }, 14000)
         
+        // ⏱️ TIMING BARU: 18000ms (dari 27000ms) - DALAM RANGE 15-19saat
         handler.postDelayed({
-            Log.d(TAG, "Step 5: Launching Panda app")
+            Log.d(TAG, "Step 4: Launching Panda app")
             launchPandaApp()
             isAutomationRunning = false
             Log.i(TAG, "=== AUTOMATION SEQUENCE COMPLETE ===")
-        }, 27000)
+        }, 18000)
     }
 
     // ==================== FLOW BARU: GABUNG FORCE STOP & CLEAR CACHE ====================
@@ -209,27 +207,27 @@ class AccessibilityAutomationService : AccessibilityService() {
                 startActivity(intent)
                 Log.d(TAG, "Opened Panda app info")
                 
-                // 2. Tunggu 1200ms untuk App Info load
+                // 2. Tunggu ⏱️ 1000ms (dari 1200ms) untuk App Info load
                 handler.postDelayed({
                     // 3. Force Stop
                     val forceStopClicked = findAndClick(*forceStopKeys)
                     
                     if (forceStopClicked) {
                         Log.d(TAG, "Force Stop clicked")
-                        // 4. Confirm (700ms)
+                        // 4. Confirm ⏱️ 500ms (dari 700ms)
                         handler.postDelayed({
                             val confirmClicked = findAndClick(*confirmOkKeys)
                             
                             if (confirmClicked) {
                                 Log.d(TAG, "Force Stop confirmed")
-                                // 5. Tunggu 1800ms untuk process selesai
+                                // 5. Tunggu ⏱️ 1200ms (dari 1800ms) untuk process selesai
                                 handler.postDelayed({
                                     // 6. Clear Cache Flow
                                     val storageClicked = findAndClick(*storageKeys)
                                     
                                     if (storageClicked) {
                                         Log.d(TAG, "Storage clicked")
-                                        // 7. Tunggu 1500ms untuk Storage page load
+                                        // 7. Tunggu ⏱️ 1000ms (dari 1500ms) untuk Storage page load
                                         handler.postDelayed({
                                             val cacheClicked = findAndClick(*clearCacheKeys)
                                             
@@ -247,22 +245,22 @@ class AccessibilityAutomationService : AccessibilityService() {
                                                 Log.d(TAG, "Clear Cache FAILED")
                                                 performGlobalAction(GLOBAL_ACTION_HOME)
                                             }
-                                        }, 1500)
+                                        }, 1000) // ⬅️ UBAH: 1500 → 1000
                                     } else {
                                         Log.d(TAG, "Storage button FAILED")
                                         performGlobalAction(GLOBAL_ACTION_HOME)
                                     }
-                                }, 1800) // Tunggu Force Stop selesai
+                                }, 1200) // ⬅️ UBAH: 1800 → 1200
                             } else {
                                 Log.d(TAG, "Confirmation FAILED")
                                 performGlobalAction(GLOBAL_ACTION_HOME)
                             }
-                        }, 700) // Confirm delay
+                        }, 500) // ⬅️ UBAH: 700 → 500
                     } else {
                         Log.d(TAG, "Force Stop FAILED")
                         performGlobalAction(GLOBAL_ACTION_HOME)
                     }
-                }, 1200) // App Info load delay
+                }, 1000) // ⬅️ UBAH: 1200 → 1000
                 
             } catch (e: Exception) {
                 Log.e(TAG, "Error in performForceCloseAndClearCache: ${e.message}")
@@ -273,56 +271,56 @@ class AccessibilityAutomationService : AccessibilityService() {
 
     private fun toggleAirplaneMode(turnOn: Boolean) {
         handler.post {
-            // 1. Buka Quick Settings
+            // 1. Buka Quick Settings SEKALI SAHAJA
             performGlobalAction(AccessibilityService.GLOBAL_ACTION_QUICK_SETTINGS)
             Log.d(TAG, "Quick Settings opened")
             
             // 2. Tunggu 700ms untuk panel load
             handler.postDelayed({
-                // List keyword untuk butang Airplane Mode
                 val airplaneKeys = arrayOf(
                     "Airplane mode", "Airplane mode ", "Airplane", 
                     "Mod Pesawat", "Mod Penerbangan", "Aeroplane mode"
                 )
                 
+                // 3. Click Airplane ON
+                val clicked = findAndClick(*airplaneKeys, maxRetries = 3)
+                if (!clicked) {
+                    findAndClick("Airplane", maxRetries = 3)
+                }
+                Log.d(TAG, "Airplane Mode ${if (turnOn) "ON" else "OFF"} clicked")
+                
+                // 4. TUNGGU DALAM SAME SESSION
                 if (turnOn) {
-                    Log.d(TAG, "Turning Airplane Mode ON")
-                    // Click untuk ON (pastikan dalam keadaan OFF dulu)
-                    val clicked = findAndClick(*airplaneKeys, maxRetries = 3)
-                    if (!clicked) {
-                        findAndClick("Airplane", maxRetries = 3)
-                    }
-                    
-                    // ✅ FIX: Ganti Thread.sleep() dengan handler.postDelayed()
+                    // Jika ON: tunggu 4s dalam ON state
                     handler.postDelayed({
-                        // 3. Tutup Quick Settings & balik ke HOME
-                        performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                        // 5. Click lagi sekali untuk OFF (masih dalam Quick Settings yang sama)
+                        val clicked2 = findAndClick(*airplaneKeys, maxRetries = 3)
+                        if (!clicked2) {
+                            findAndClick("Airplane", maxRetries = 3)
+                        }
+                        Log.d(TAG, "Airplane Mode OFF clicked (after waiting)")
+                        
+                        // 6. Tutup Quick Settings & Home (SEKALI SAHAJA)
                         handler.postDelayed({
-                            performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
-                            Log.d(TAG, "Airplane Mode ON complete")
-                        }, 300)
-                    }, 4000) // ⬅️ Delay 4000ms (ganti Thread.sleep(4000))
+                            performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                            handler.postDelayed({
+                                performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+                                Log.d(TAG, "Airplane ON→OFF sequence COMPLETE")
+                            }, 300)
+                        }, 1000)
+                    }, 3000) // Tunggu 4s dalam ON state
                     
                 } else {
-                    Log.d(TAG, "Turning Airplane Mode OFF")
-                    // Click untuk OFF (pastikan dalam keadaan ON dulu)
-                    val clicked = findAndClick(*airplaneKeys, maxRetries = 3)
-                    if (!clicked) {
-                        findAndClick("Airplane", maxRetries = 3)
-                    }
-                    
-                    // ✅ FIX: Sama untuk OFF
+                    // Jika OFF: terus tutup
                     handler.postDelayed({
-                        // 3. Tutup Quick Settings & balik ke HOME
                         performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
                         handler.postDelayed({
                             performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
                             Log.d(TAG, "Airplane Mode OFF complete")
                         }, 300)
-                    }, 1000) // ⬅️ OFF tak perlu tunggu lama (1000ms saja)
+                    }, 1000)
                 }
-                
-            }, 700) // Delay 700ms selepas buka Quick Settings
+            }, 700)
         }
     }
 

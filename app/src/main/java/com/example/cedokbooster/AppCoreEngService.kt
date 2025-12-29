@@ -4,10 +4,8 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
@@ -33,21 +31,11 @@ class AppCoreEngService : Service() {
         private const val TAG = "AppCoreEngService"
         const val ACTION_START_ENGINE = "com.example.cedokbooster.START_ENGINE"
         const val ACTION_STOP_ENGINE = "com.example.cedokbooster.STOP_ENGINE"
-        const val ACTION_QUERY_STATUS = "com.example.cedokbooster.QUERY_STATUS"
         const val CORE_ENGINE_STATUS_UPDATE = "com.example.cedokbooster.CORE_ENGINE_STATUS_UPDATE"
         const val GPS_LOCK_ACHIEVED = "com.example.cedokbooster.GPS_LOCK_ACHIEVED"
         
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "core_engine_channel"
-    }
-
-    private val statusQueryReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            if (intent?.action == ACTION_QUERY_STATUS) {
-                Log.d(TAG, "Status query received, broadcasting current status")
-                broadcastStatus()
-            }
-        }
     }
 
     private val locationListener = object : LocationListener {
@@ -78,10 +66,6 @@ class AppCoreEngService : Service() {
         super.onCreate()
         Log.d(TAG, "Service onCreate()")
         createNotificationChannel()
-        
-        // Register receiver for status queries
-        val filter = IntentFilter(ACTION_QUERY_STATUS)
-        registerReceiver(statusQueryReceiver, filter)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -279,13 +263,4 @@ class AppCoreEngService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
-
-    override fun onDestroy() {
-        super.onDestroy()
-        try {
-            unregisterReceiver(statusQueryReceiver)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error unregistering receiver", e)
-        }
-    }
 }

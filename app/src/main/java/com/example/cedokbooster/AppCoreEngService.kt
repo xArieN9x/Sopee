@@ -128,6 +128,9 @@ class AppCoreEngService : Service() {
         Log.d(TAG, "Starting CoreEngine with DNS: $dnsType")
         isEngineRunning = true
 
+        // APPLY DNS
+        applyDNS()
+
         // Start foreground
         startForeground(NOTIFICATION_ID, createNotification())
 
@@ -156,6 +159,9 @@ class AppCoreEngService : Service() {
         Log.d(TAG, "Stopping CoreEngine")
         isEngineRunning = false
         gpsStatus = "idle"
+
+        // restore DNS default
+        restoreDNS()
 
         // Stop GPS
         stopGPSStabilization()
@@ -226,6 +232,40 @@ class AppCoreEngService : Service() {
             Log.d(TAG, "GPS stabilization stopped")
         } catch (e: Exception) {
             Log.e(TAG, "Error stopping GPS", e)
+        }
+    }
+
+    // NEW UPDATE for VpnDnsService.kt
+    private fun applyDNS() {
+        Log.d(TAG, "Applying DNS: $dnsType")
+        
+        try {
+            // Guna VpnDnsService untuk apply DNS sebenar
+            VpnDnsService.startVpn(this, dnsType)
+            Log.d(TAG, "DNS VPN service started dengan type: $dnsType")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start DNS VPN: ${e.message}")
+            // Fallback ke dummy log (existing behavior)
+            val dns = when (dnsType) {
+                "A" -> "156.154.70.1"
+                "B" -> "1.1.1.1"
+                else -> "8.8.8.8"
+            }
+            Log.d(TAG, "Fallback: DNS would be: $dns")
+        }
+    }
+
+    // NEW UPDATE for VpnDnsService.kt
+    private fun restoreDNS() {
+        Log.d(TAG, "Restoring default DNS")
+        
+        try {
+            VpnDnsService.stopVpn(this)
+            Log.d(TAG, "DNS VPN service stopped")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to stop DNS VPN: ${e.message}")
+            // Fallback ke existing behavior
+            Log.d(TAG, "Fallback: DNS restored to default")
         }
     }
 

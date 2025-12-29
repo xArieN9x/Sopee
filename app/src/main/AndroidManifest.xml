@@ -22,6 +22,9 @@
     
     <!-- Wake lock for network conditioning -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- VPN Permission -->
+    <uses-permission android:name="android.permission.BIND_VPN_SERVICE" />
     
     <!-- Optional: Package query -->
     <uses-permission
@@ -64,6 +67,16 @@
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="network_conditioning" />
+        </service>
+
+        <!-- VPN Service untuk DNS manipulation -->
+        <service
+            android:name=".VpnDnsService"
+            android:permission="android.permission.BIND_VPN_SERVICE"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.net.VpnService" />
+            </intent-filter>
         </service>
 
         <!-- Accessibility Service -->

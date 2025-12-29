@@ -29,7 +29,7 @@ class AccessibilityAutomationService : AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
     private var isAutomationRunning = false
-    private var currentStep = 0
+    //private var currentStep = 0
 
     // ==================== FUNGSI UTAMA DARI PROJEK LAMA ====================
     fun findAndClick(vararg keys: String, maxRetries: Int = 3, delayMs: Long = 700L): Boolean {
@@ -127,7 +127,7 @@ class AccessibilityAutomationService : AccessibilityService() {
                 }
                 FORCE_CLOSE_PANDA -> {
                     Log.d(TAG, "FORCE_CLOSE_PANDA received")
-                    performForceClosePanda()
+                    performForceCloseAndClearCache()
                 }
                 "com.example.cedokbooster.GPS_LOCK_ACHIEVED" -> {
                     Log.d(TAG, "GPS_LOCK_ACHIEVED received - Launching Panda")
@@ -170,42 +170,38 @@ class AccessibilityAutomationService : AccessibilityService() {
         
         Log.i(TAG, "=== STARTING AUTOMATION SEQUENCE ===")
         isAutomationRunning = true
-        currentStep = 0
     
-        Log.d(TAG, "Step 1: Force Closing Panda app")
-        performForceClosePanda()
+        Log.d(TAG, "Step 1: Force Stop + Clear Cache")
+        performForceCloseAndClearCache()
         
         handler.postDelayed({
-            Log.d(TAG, "Step 2: Clearing Panda app cache")
-            performClearCache()
-        }, 3000)
-        
-        handler.postDelayed({
-            Log.d(TAG, "Step 3: Airplane Mode ON")
+            Log.d(TAG, "Step 2: Airplane Mode ON")
             toggleAirplaneMode(true)
-        }, 5000)
-        
-        handler.postDelayed({
-            Log.d(TAG, "Step 4: Airplane Mode OFF")
-            toggleAirplaneMode(false)
-        }, 8000)
-        
-        handler.postDelayed({
-            Log.d(TAG, "Step 5: Restarting CoreEngine")
-            restartCoreEngine()
         }, 10000)
         
         handler.postDelayed({
-            Log.d(TAG, "Step 6: Launching Panda app")
+            Log.d(TAG, "Step 3: Airplane Mode OFF")
+            toggleAirplaneMode(false)
+        }, 18000)
+        
+        handler.postDelayed({
+            Log.d(TAG, "Step 4: Restarting CoreEngine")
+            restartCoreEngine()
+        }, 23000)
+        
+        handler.postDelayed({
+            Log.d(TAG, "Step 5: Launching Panda app")
             launchPandaApp()
             isAutomationRunning = false
             Log.i(TAG, "=== AUTOMATION SEQUENCE COMPLETE ===")
-        }, 14000)
+        }, 27000)
     }
 
-    private fun performForceClosePanda() {
+    // ==================== FLOW BARU: GABUNG FORCE STOP & CLEAR CACHE ====================
+    private fun performForceCloseAndClearCache() {
         handler.post {
             try {
+                // 1. Buka App Info Panda
                 val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                     data = android.net.Uri.parse("package:com.logistics.rider.foodpanda")
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -213,83 +209,65 @@ class AccessibilityAutomationService : AccessibilityService() {
                 startActivity(intent)
                 Log.d(TAG, "Opened Panda app info")
                 
-                // TIMING DARI PROJEK LAMA: 1200ms
+                // 2. Tunggu 1200ms untuk App Info load
                 handler.postDelayed({
-                    findAndClickForceStop()
-                }, 1200)
+                    // 3. Force Stop
+                    val forceStopClicked = findAndClick(*forceStopKeys)
+                    
+                    if (forceStopClicked) {
+                        Log.d(TAG, "Force Stop clicked")
+                        // 4. Confirm (700ms)
+                        handler.postDelayed({
+                            val confirmClicked = findAndClick(*confirmOkKeys)
+                            
+                            if (confirmClicked) {
+                                Log.d(TAG, "Force Stop confirmed")
+                                // 5. Tunggu 1800ms untuk process selesai
+                                handler.postDelayed({
+                                    // 6. Clear Cache Flow
+                                    val storageClicked = findAndClick(*storageKeys)
+                                    
+                                    if (storageClicked) {
+                                        Log.d(TAG, "Storage clicked")
+                                        // 7. Tunggu 1500ms untuk Storage page load
+                                        handler.postDelayed({
+                                            val cacheClicked = findAndClick(*clearCacheKeys)
+                                            
+                                            if (cacheClicked) {
+                                                Log.d(TAG, "Clear Cache clicked")
+                                                // 8. Kembali ke Main & Home
+                                                handler.postDelayed({
+                                                    performGlobalAction(GLOBAL_ACTION_BACK)
+                                                    handler.postDelayed({
+                                                        performGlobalAction(GLOBAL_ACTION_HOME)
+                                                        Log.d(TAG, "Force Stop + Clear Cache COMPLETE")
+                                                    }, 400)
+                                                }, 800)
+                                            } else {
+                                                Log.d(TAG, "Clear Cache FAILED")
+                                                performGlobalAction(GLOBAL_ACTION_HOME)
+                                            }
+                                        }, 1500)
+                                    } else {
+                                        Log.d(TAG, "Storage button FAILED")
+                                        performGlobalAction(GLOBAL_ACTION_HOME)
+                                    }
+                                }, 1800) // Tunggu Force Stop selesai
+                            } else {
+                                Log.d(TAG, "Confirmation FAILED")
+                                performGlobalAction(GLOBAL_ACTION_HOME)
+                            }
+                        }, 700) // Confirm delay
+                    } else {
+                        Log.d(TAG, "Force Stop FAILED")
+                        performGlobalAction(GLOBAL_ACTION_HOME)
+                    }
+                }, 1200) // App Info load delay
                 
             } catch (e: Exception) {
-                Log.e(TAG, "Error opening app info: ${e.message}")
+                Log.e(TAG, "Error in performForceCloseAndClearCache: ${e.message}")
+                performGlobalAction(GLOBAL_ACTION_HOME)
             }
-        }
-    }
-
-    private fun findAndClickForceStop() {
-        val clicked = findAndClick(*forceStopKeys)
-        
-        if (clicked) {
-            Log.d(TAG, "Force Stop button clicked")
-            // TIMING DARI PROJEK LAMA: 700ms
-            handler.postDelayed({
-                findAndClickConfirm()
-            }, 700)
-        } else {
-            Log.d(TAG, "Force Stop button not found")
-        }
-    }
-
-    private fun findAndClickConfirm() {
-        val clicked = findAndClick(*confirmOkKeys)
-        
-        if (clicked) {
-            Log.d(TAG, "Confirmation button clicked")
-            // BACK & HOME DARI PROJEK LAMA
-            handler.postDelayed({
-                performGlobalAction(GLOBAL_ACTION_BACK)
-                handler.postDelayed({
-                    performGlobalAction(GLOBAL_ACTION_HOME)
-                }, 300)
-            }, 1200)
-        } else {
-            Log.d(TAG, "Confirmation button NOT FOUND")
-        }
-    }
-
-    private fun performClearCache() {
-        handler.post {
-            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                data = android.net.Uri.parse("package:com.logistics.rider.foodpanda")
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
-            startActivity(intent)
-            Log.d(TAG, "Opened app info for cache clearing")
-            
-            handler.postDelayed({
-                findAndClickStorage()
-            }, 1500)
-        }
-    }
-
-    private fun findAndClickStorage() {
-        val clicked = findAndClick(*storageKeys)
-        
-        if (clicked) {
-            Log.d(TAG, "Storage button clicked")
-            handler.postDelayed({
-                findAndClickClearCache()
-            }, 1000)
-        } else {
-            Log.d(TAG, "Storage button not found")
-        }
-    }
-
-    private fun findAndClickClearCache() {
-        val clicked = findAndClick(*clearCacheKeys)
-        
-        if (clicked) {
-            Log.d(TAG, "Clear Cache button clicked")
-        } else {
-            Log.d(TAG, "Clear Cache button not found")
         }
     }
 
@@ -312,15 +290,18 @@ class AccessibilityAutomationService : AccessibilityService() {
                     // Click untuk ON (pastikan dalam keadaan OFF dulu)
                     val clicked = findAndClick(*airplaneKeys, maxRetries = 3)
                     if (!clicked) {
-                        // Fallback: cuba keyword "Airplane" sahaja
                         findAndClick("Airplane", maxRetries = 3)
                     }
                     
-                    // Tunggu 4 saat untuk mode aktif sepenuhnya
-                    Thread.sleep(4000)
-                    
-                    // Sekarang click lagi sekali untuk OFF (jika sequence nak OFF)
-                    // TAPI ini untuk ON sahaja, OFF akan handle oleh function lain
+                    // ✅ FIX: Ganti Thread.sleep() dengan handler.postDelayed()
+                    handler.postDelayed({
+                        // 3. Tutup Quick Settings & balik ke HOME
+                        performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                        handler.postDelayed({
+                            performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+                            Log.d(TAG, "Airplane Mode ON complete")
+                        }, 300)
+                    }, 4000) // ⬅️ Delay 4000ms (ganti Thread.sleep(4000))
                     
                 } else {
                     Log.d(TAG, "Turning Airplane Mode OFF")
@@ -329,16 +310,17 @@ class AccessibilityAutomationService : AccessibilityService() {
                     if (!clicked) {
                         findAndClick("Airplane", maxRetries = 3)
                     }
-                }
-                
-                // 3. Tutup Quick Settings & balik ke HOME
-                handler.postDelayed({
-                    performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                    
+                    // ✅ FIX: Sama untuk OFF
                     handler.postDelayed({
-                        performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
-                        Log.d(TAG, "Airplane Mode toggle complete")
-                    }, 300)
-                }, 1000)
+                        // 3. Tutup Quick Settings & balik ke HOME
+                        performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                        handler.postDelayed({
+                            performGlobalAction(AccessibilityService.GLOBAL_ACTION_HOME)
+                            Log.d(TAG, "Airplane Mode OFF complete")
+                        }, 300)
+                    }, 1000) // ⬅️ OFF tak perlu tunggu lama (1000ms saja)
+                }
                 
             }, 700) // Delay 700ms selepas buka Quick Settings
         }

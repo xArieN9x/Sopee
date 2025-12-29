@@ -232,6 +232,41 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Query service status bila app resume
+        queryServiceStatus()
+    }
+
+    private fun queryServiceStatus() {
+        // Check if service running
+        val am = getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        var isServiceRunning = false
+        
+        try {
+            val services = am.getRunningServices(Int.MAX_VALUE)
+            for (service in services) {
+                if (service.service.className == AppCoreEngService::class.java.name) {
+                    isServiceRunning = true
+                    break
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error checking service status", e)
+        }
+
+        // Send query broadcast to service
+        if (isServiceRunning) {
+            val intent = Intent(AppCoreEngService.ACTION_QUERY_STATUS)
+            sendBroadcast(intent)
+            Log.d(TAG, "Querying service status...")
+        } else {
+            // Service not running, update UI
+            updateUIStatus(false, "none", "idle")
+            Log.d(TAG, "Service not running, UI updated")
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         scope.cancel()

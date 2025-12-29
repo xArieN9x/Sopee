@@ -84,72 +84,50 @@ class AccessibilityAutomationService : AccessibilityService() {
         this.serviceInfo = config
     }
 
-    /**
-     * SEQUENCE LENGKAP DAJ - DARI PROJECT LAMA
-     */
     private fun startAutomationSequence() {
-        if (isAutomationRunning) {
-            Log.w(TAG, "Automation sequence already running")
-            return
-        }
-
+        if (isAutomationRunning) return
+        
         Log.i(TAG, "=== STARTING AUTOMATION SEQUENCE ===")
         isAutomationRunning = true
         currentStep = 0
-
-        // Step 1: Force Close Panda App
-        handler.postDelayed({
-            Log.d(TAG, "Step 1: Force Closing Panda app")
-            performForceClosePanda()
-            currentStep = 1
-        }, 500)
-
-        // Step 2: Clear Cache Panda App (wait 2 seconds)
+    
+        // Step 1: Force Close Panda App (segera)
+        Log.d(TAG, "Step 1: Force Closing Panda app")
+        performForceClosePanda()
+        
+        // Step 2: Clear Cache (tunggu 3 saat)
         handler.postDelayed({
             Log.d(TAG, "Step 2: Clearing Panda app cache")
             performClearCache()
-            currentStep = 2
-        }, 2500)
-
-        // Step 3: Toggle Airplane Mode ON (wait 1.5 seconds after cache clear)
+        }, 3000)
+        
+        // Step 3: Airplane Mode ON (tunggu 2 saat selepas cache)
         handler.postDelayed({
             Log.d(TAG, "Step 3: Airplane Mode ON")
             toggleAirplaneMode(true)
-            currentStep = 3
-        }, 4000)
-
-        // Step 4: Toggle Airplane Mode OFF (wait 3 seconds)
+        }, 5000)
+        
+        // Step 4: Airplane Mode OFF (tunggu 3 saat)
         handler.postDelayed({
             Log.d(TAG, "Step 4: Airplane Mode OFF")
             toggleAirplaneMode(false)
-            currentStep = 4
-        }, 7000)
-
-        // Step 5: Restart CoreEngine (wait 4 seconds)
+        }, 8000)
+        
+        // Step 5: Restart CoreEngine (tunggu 2 saat)
         handler.postDelayed({
             Log.d(TAG, "Step 5: Restarting CoreEngine")
             restartCoreEngine()
-            currentStep = 5
-        }, 11000)
-
-        // Step 6: Launch Panda App (wait 4 seconds after CE restart)
+        }, 10000)
+        
+        // Step 6: Launch Panda App (tunggu 4 saat)
         handler.postDelayed({
             Log.d(TAG, "Step 6: Launching Panda app")
             launchPandaApp()
-            currentStep = 6
-        }, 15000)
-
-        // Step 7: Complete (wait 2 seconds)
-        handler.postDelayed({
-            Log.i(TAG, "=== AUTOMATION SEQUENCE COMPLETE ===")
             isAutomationRunning = false
-            currentStep = 0
-        }, 17000)
+            Log.i(TAG, "=== AUTOMATION SEQUENCE COMPLETE ===")
+        }, 14000)
     }
 
-    /**
-     * FUNGSI UNTUK FORCE CLOSE PANDA - DARI PROJECT LAMA
-     */
     private fun performForceClosePanda() {
         handler.post {
             try {
@@ -209,9 +187,6 @@ class AccessibilityAutomationService : AccessibilityService() {
         }
     }
 
-    /**
-     * FUNGSI UNTUK CLEAR CACHE - DARI PROJECT LAMA
-     */
     private fun performClearCache() {
         handler.post {
             // Buka storage settings untuk Panda
@@ -266,9 +241,6 @@ class AccessibilityAutomationService : AccessibilityService() {
         Log.d(TAG, "Clear Cache button not found")
     }
 
-    /**
-     * FUNGSI UNTUK AIRPLANE MODE - DARI PROJECT LAMA
-     */
     private fun toggleAirplaneMode(turnOn: Boolean) {
         handler.post {
             try {
@@ -304,9 +276,6 @@ class AccessibilityAutomationService : AccessibilityService() {
         }
     }
 
-    /**
-     * FUNGSI UNTUK RESTART COREENGINE - DARI PROJECT CURRENT
-     */
     private fun restartCoreEngine() {
         // Hantar broadcast untuk restart CoreEngine
         val intent = Intent("RESTART_CORE_ENGINE")
@@ -314,9 +283,6 @@ class AccessibilityAutomationService : AccessibilityService() {
         Log.d(TAG, "Sent RESTART_CORE_ENGINE broadcast")
     }
 
-    /**
-     * FUNGSI UNTUK LAUNCH PANDA APP - DARI PROJECT CURRENT
-     */
     private fun launchPandaApp() {
         handler.post {
             try {
@@ -334,9 +300,6 @@ class AccessibilityAutomationService : AccessibilityService() {
         }
     }
 
-    /**
-     * HELPER FUNCTION - DARI PROJECT LAMA
-     */
     private fun findButtonByDescription(rootNode: AccessibilityNodeInfo, description: String) {
         for (i in 0 until rootNode.childCount) {
             val child = rootNode.getChild(i)

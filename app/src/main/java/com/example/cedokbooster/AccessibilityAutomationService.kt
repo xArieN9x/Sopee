@@ -18,6 +18,7 @@ class AccessibilityAutomationService : AccessibilityService() {
     companion object {
         private const val TAG = "AccessibilityAutomation"
         const val FORCE_CLOSE_PANDA = "com.example.cedokbooster.FORCE_CLOSE_PANDA"
+        const val DO_ALL_JOB_TRIGGER = "DO_ALL_JOB_TRIGGER"
         
         // Keys untuk click detection - DARI PROJECT LAMA
         private val storageKeys = arrayOf("Storage usage", "Storage usage ", "Storage", "Storage & cache", "App storage")

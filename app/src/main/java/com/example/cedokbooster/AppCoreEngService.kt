@@ -30,6 +30,7 @@ class AppCoreEngService : Service() {
     private var dnsType: String = "none"
     private var gpsStatus: String = "idle"
     private var isEngineRunning = false
+    private val handler = Handler(Looper.getMainLooper())
 
     companion object {
         private const val TAG = "AppCoreEngService"
@@ -88,6 +89,9 @@ class AppCoreEngService : Service() {
         // Register receiver for status queries
         val filter = IntentFilter(ACTION_QUERY_STATUS)
         registerReceiver(statusQueryReceiver, filter)
+
+        val restartFilter = IntentFilter("RESTART_CORE_ENGINE")
+        LocalBroadcastManager.getInstance(this).registerReceiver(restartReceiver, restartFilter)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -101,6 +105,18 @@ class AppCoreEngService : Service() {
             }
         }
         return START_STICKY
+    }
+
+    private val restartReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action == "RESTART_CORE_ENGINE") {
+                Log.d(TAG, "RESTART_CORE_ENGINE received - Restarting CoreEngine")
+                stopCoreEngine()  // Matikan dulu
+                handler.postDelayed({
+                    startCoreEngine() // Hidupkan semula
+                }, 1000)
+            }
+        }
     }
 
     private fun startCoreEngine() {
@@ -157,8 +173,8 @@ class AppCoreEngService : Service() {
         })
 
         // Trigger force close Panda via accessibility
-        val intent = Intent(AccessibilityAutomationService.FORCE_CLOSE_PANDA)
-        LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
+        //val intent = Intent(AccessibilityAutomationService.FORCE_CLOSE_PANDA)
+        //LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
 
         broadcastStatus()
         stopForeground(true)
@@ -290,6 +306,8 @@ class AppCoreEngService : Service() {
         super.onDestroy()
         try {
             unregisterReceiver(statusQueryReceiver)
+            // ✅ TAMBAH BARIS INI:
+            LocalBroadcastManager.getInstance(this).unregisterReceiver(restartReceiver)
         } catch (e: Exception) {
             Log.e(TAG, "Error unregistering receiver", e)
         }

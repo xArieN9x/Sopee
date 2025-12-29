@@ -17,6 +17,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import kotlinx.coroutines.*
 
+import com.example.cedokbooster.AccessibilityAutomationService.Companion.DO_ALL_JOB_TRIGGER
+
 class MainActivity : AppCompatActivity() {
 
     private lateinit var tvPublicIp: TextView
@@ -164,11 +166,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun triggerDoAllJob() {
-        val intent = Intent(AccessibilityAutomationService.DO_ALL_JOB_TRIGGER).apply {
-            putExtra("currentDns", currentDns)
-        }
+        val intent = Intent(AccessibilityAutomationService.DO_ALL_JOB_TRIGGER)
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
         Toast.makeText(this, "DO ALL JOB triggered!", Toast.LENGTH_SHORT).show()
+        Log.d(TAG, "DO_ALL_JOB_TRIGGER sent")
     }
 
     private fun updateUIStatus(isRunning: Boolean, dns: String, gpsStatus: String) {

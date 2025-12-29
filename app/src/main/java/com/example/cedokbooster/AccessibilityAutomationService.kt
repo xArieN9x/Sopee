@@ -12,6 +12,7 @@ import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import java.util.ArrayDeque
 
 class AccessibilityAutomationService : AccessibilityService() {
 
@@ -30,7 +31,90 @@ class AccessibilityAutomationService : AccessibilityService() {
     private var isAutomationRunning = false
     private var currentStep = 0
 
-    // Dalam broadcastReceiver - TAMBAH handler untuk GPS_LOCK_ACHIEVED
+    // ==================== FUNGSI UTAMA DARI PROJEK LAMA ====================
+    fun findAndClick(vararg keys: String, maxRetries: Int = 3, delayMs: Long = 700L): Boolean {
+        repeat(maxRetries) {
+            val root = rootInActiveWindow
+            if (root != null) {
+                for (k in keys) {
+                    // Exact text matches
+                    val nodes = root.findAccessibilityNodeInfosByText(k)
+                    if (!nodes.isNullOrEmpty()) {
+                        for (n in nodes) {
+                            if (n.isClickable) { 
+                                n.performAction(AccessibilityNodeInfo.ACTION_CLICK); 
+                                return true 
+                            }
+                            var p = n.parent
+                            while (p != null) {
+                                if (p.isClickable) { 
+                                    p.performAction(AccessibilityNodeInfo.ACTION_CLICK); 
+                                    return true 
+                                }
+                                p = p.parent
+                            }
+                        }
+                    }
+                    // Content-desc scan
+                    val desc = findNodeByDescription(root, k)
+                    if (desc != null) { 
+                        desc.performAction(AccessibilityNodeInfo.ACTION_CLICK); 
+                        return true 
+                    }
+                    // ViewId fallback
+                    val idNode = findNodeByViewId(root, k)
+                    if (idNode != null) {
+                        if (idNode.isClickable) { 
+                            idNode.performAction(AccessibilityNodeInfo.ACTION_CLICK); 
+                            return true 
+                        }
+                        var p = idNode.parent
+                        while (p != null) {
+                            if (p.isClickable) { 
+                                p.performAction(AccessibilityNodeInfo.ACTION_CLICK); 
+                                return true 
+                            }
+                            p = p.parent
+                        }
+                    }
+                }
+                // Try scroll to reveal
+                root.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+            }
+            Thread.sleep(delayMs)
+        }
+        return false
+    }
+
+    private fun findNodeByDescription(root: AccessibilityNodeInfo, text: String): AccessibilityNodeInfo? {
+        val stack = ArrayDeque<AccessibilityNodeInfo>()
+        stack.add(root)
+        while (stack.isNotEmpty()) {
+            val n = stack.removeFirst()
+            try {
+                val cd = n.contentDescription
+                if (cd != null && cd.toString().contains(text, true)) return n
+            } catch (_: Exception) {}
+            for (i in 0 until n.childCount) n.getChild(i)?.let { stack.add(it) }
+        }
+        return null
+    }
+
+    private fun findNodeByViewId(root: AccessibilityNodeInfo, idPart: String): AccessibilityNodeInfo? {
+        val stack = ArrayDeque<AccessibilityNodeInfo>()
+        stack.add(root)
+        while (stack.isNotEmpty()) {
+            val n = stack.removeFirst()
+            try {
+                val vid = n.viewIdResourceName
+                if (vid != null && vid.contains(idPart, true)) return n
+            } catch (_: Exception) {}
+            for (i in 0 until n.childCount) n.getChild(i)?.let { stack.add(it) }
+        }
+        return null
+    }
+    // ==================== AKHIR FUNGSI DARI PROJEK LAMA ====================
+
     private val broadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
@@ -45,7 +129,6 @@ class AccessibilityAutomationService : AccessibilityService() {
                     Log.d(TAG, "FORCE_CLOSE_PANDA received")
                     performForceClosePanda()
                 }
-                // ✅ TAMBAH handler untuk GPS lock
                 "com.example.cedokbooster.GPS_LOCK_ACHIEVED" -> {
                     Log.d(TAG, "GPS_LOCK_ACHIEVED received - Launching Panda")
                     handler.postDelayed({
@@ -60,7 +143,6 @@ class AccessibilityAutomationService : AccessibilityService() {
         super.onCreate()
         Log.d(TAG, "Service onCreate")
         
-        // Register broadcast receiver
         val filter = IntentFilter().apply {
             addAction("DO_ALL_JOB_TRIGGER")
             addAction(Companion.FORCE_CLOSE_PANDA)
@@ -73,7 +155,6 @@ class AccessibilityAutomationService : AccessibilityService() {
         super.onServiceConnected()
         Log.i(TAG, "Accessibility Service Connected")
         
-        // Configure service
         val config = serviceInfo.apply {
             eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
                         AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
@@ -91,35 +172,29 @@ class AccessibilityAutomationService : AccessibilityService() {
         isAutomationRunning = true
         currentStep = 0
     
-        // Step 1: Force Close Panda App (segera)
         Log.d(TAG, "Step 1: Force Closing Panda app")
         performForceClosePanda()
         
-        // Step 2: Clear Cache (tunggu 3 saat)
         handler.postDelayed({
             Log.d(TAG, "Step 2: Clearing Panda app cache")
             performClearCache()
         }, 3000)
         
-        // Step 3: Airplane Mode ON (tunggu 2 saat selepas cache)
         handler.postDelayed({
             Log.d(TAG, "Step 3: Airplane Mode ON")
             toggleAirplaneMode(true)
         }, 5000)
         
-        // Step 4: Airplane Mode OFF (tunggu 3 saat)
         handler.postDelayed({
             Log.d(TAG, "Step 4: Airplane Mode OFF")
             toggleAirplaneMode(false)
         }, 8000)
         
-        // Step 5: Restart CoreEngine (tunggu 2 saat)
         handler.postDelayed({
             Log.d(TAG, "Step 5: Restarting CoreEngine")
             restartCoreEngine()
         }, 10000)
         
-        // Step 6: Launch Panda App (tunggu 4 saat)
         handler.postDelayed({
             Log.d(TAG, "Step 6: Launching Panda app")
             launchPandaApp()
@@ -131,7 +206,6 @@ class AccessibilityAutomationService : AccessibilityService() {
     private fun performForceClosePanda() {
         handler.post {
             try {
-                // Buka app info untuk Panda
                 val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                     data = android.net.Uri.parse("package:com.logistics.rider.foodpanda")
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -139,10 +213,10 @@ class AccessibilityAutomationService : AccessibilityService() {
                 startActivity(intent)
                 Log.d(TAG, "Opened Panda app info")
                 
-                // Tunggu 1.5 saat untuk app info load, kemudian cari butang Force Stop
+                // TIMING DARI PROJEK LAMA: 1200ms
                 handler.postDelayed({
                     findAndClickForceStop()
-                }, 1500)
+                }, 1200)
                 
             } catch (e: Exception) {
                 Log.e(TAG, "Error opening app info: ${e.message}")
@@ -151,45 +225,38 @@ class AccessibilityAutomationService : AccessibilityService() {
     }
 
     private fun findAndClickForceStop() {
-        val rootNode = rootInActiveWindow ?: return
+        val clicked = findAndClick(*forceStopKeys)
         
-        // Cari butang "Force Stop" menggunakan keys dari project lama
-        for (key in forceStopKeys) {
-            val nodes = rootNode.findAccessibilityNodeInfosByText(key)
-            if (nodes.isNotEmpty()) {
-                Log.d(TAG, "Found Force Stop button: $key")
-                nodes[0].performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                
-                // Tunggu untuk confirmation dialog, kemudian click OK/Confirm
-                handler.postDelayed({
-                    findAndClickConfirm()
-                }, 1000)
-                return
-            }
+        if (clicked) {
+            Log.d(TAG, "Force Stop button clicked")
+            // TIMING DARI PROJEK LAMA: 700ms
+            handler.postDelayed({
+                findAndClickConfirm()
+            }, 700)
+        } else {
+            Log.d(TAG, "Force Stop button not found")
         }
-        
-        Log.d(TAG, "Force Stop button not found, trying alternative")
-        // Alternative: Cari butang dengan description atau ID
-        findButtonByDescription(rootNode, "Force stop")
     }
 
     private fun findAndClickConfirm() {
-        val rootNode = rootInActiveWindow ?: return
+        val clicked = findAndClick(*confirmOkKeys)
         
-        // Cari butang confirmation (OK/Yes/Confirm)
-        for (key in confirmOkKeys) {
-            val nodes = rootNode.findAccessibilityNodeInfosByText(key)
-            if (nodes.isNotEmpty()) {
-                Log.d(TAG, "Found confirmation button: $key")
-                nodes[0].performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                return
-            }
+        if (clicked) {
+            Log.d(TAG, "Confirmation button clicked")
+            // BACK & HOME DARI PROJEK LAMA
+            handler.postDelayed({
+                performGlobalAction(GLOBAL_ACTION_BACK)
+                handler.postDelayed({
+                    performGlobalAction(GLOBAL_ACTION_HOME)
+                }, 300)
+            }, 1200)
+        } else {
+            Log.d(TAG, "Confirmation button NOT FOUND")
         }
     }
 
     private fun performClearCache() {
         handler.post {
-            // Buka storage settings untuk Panda
             val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                 data = android.net.Uri.parse("package:com.logistics.rider.foodpanda")
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -197,7 +264,6 @@ class AccessibilityAutomationService : AccessibilityService() {
             startActivity(intent)
             Log.d(TAG, "Opened app info for cache clearing")
             
-            // Tunggu 1.5 saat, kemudian cari "Storage" button
             handler.postDelayed({
                 findAndClickStorage()
             }, 1500)
@@ -205,48 +271,32 @@ class AccessibilityAutomationService : AccessibilityService() {
     }
 
     private fun findAndClickStorage() {
-        val rootNode = rootInActiveWindow ?: return
+        val clicked = findAndClick(*storageKeys)
         
-        // Cari butang "Storage" menggunakan keys dari project lama
-        for (key in storageKeys) {
-            val nodes = rootNode.findAccessibilityNodeInfosByText(key)
-            if (nodes.isNotEmpty()) {
-                Log.d(TAG, "Found Storage button: $key")
-                nodes[0].performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                
-                // Tunggu 1 saat, kemudian cari "Clear Cache" button
-                handler.postDelayed({
-                    findAndClickClearCache()
-                }, 1000)
-                return
-            }
+        if (clicked) {
+            Log.d(TAG, "Storage button clicked")
+            handler.postDelayed({
+                findAndClickClearCache()
+            }, 1000)
+        } else {
+            Log.d(TAG, "Storage button not found")
         }
-        
-        Log.d(TAG, "Storage button not found")
     }
 
     private fun findAndClickClearCache() {
-        val rootNode = rootInActiveWindow ?: return
+        val clicked = findAndClick(*clearCacheKeys)
         
-        // Cari butang "Clear Cache" menggunakan keys dari project lama
-        for (key in clearCacheKeys) {
-            val nodes = rootNode.findAccessibilityNodeInfosByText(key)
-            if (nodes.isNotEmpty()) {
-                Log.d(TAG, "Found Clear Cache button: $key")
-                nodes[0].performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                return
-            }
+        if (clicked) {
+            Log.d(TAG, "Clear Cache button clicked")
+        } else {
+            Log.d(TAG, "Clear Cache button not found")
         }
-        
-        Log.d(TAG, "Clear Cache button not found")
     }
 
     private fun toggleAirplaneMode(turnOn: Boolean) {
         handler.post {
             try {
-                // Buka quick settings atau airplane mode settings
                 if (turnOn) {
-                    // Untuk turn ON airplane mode
                     Settings.Global.putInt(
                         contentResolver,
                         Settings.Global.AIRPLANE_MODE_ON,
@@ -258,7 +308,6 @@ class AccessibilityAutomationService : AccessibilityService() {
                     sendBroadcast(intent)
                     Log.d(TAG, "Airplane Mode turned ON")
                 } else {
-                    // Untuk turn OFF airplane mode
                     Settings.Global.putInt(
                         contentResolver,
                         Settings.Global.AIRPLANE_MODE_ON,
@@ -277,7 +326,6 @@ class AccessibilityAutomationService : AccessibilityService() {
     }
 
     private fun restartCoreEngine() {
-        // Hantar broadcast untuk restart CoreEngine
         val intent = Intent("RESTART_CORE_ENGINE")
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
         Log.d(TAG, "Sent RESTART_CORE_ENGINE broadcast")
@@ -300,21 +348,15 @@ class AccessibilityAutomationService : AccessibilityService() {
         }
     }
 
+    // Function lama (untuk compatibility)
     private fun findButtonByDescription(rootNode: AccessibilityNodeInfo, description: String) {
-        for (i in 0 until rootNode.childCount) {
-            val child = rootNode.getChild(i)
-            if (child != null) {
-                if (child.contentDescription?.toString()?.contains(description, true) == true) {
-                    child.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                    return
-                }
-                findButtonByDescription(child, description)
-            }
+        val node = findNodeByDescription(rootNode, description)
+        if (node != null) {
+            node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
         }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        // Untuk monitor events jika perlu
         event?.let {
             if (it.packageName == "com.logistics.rider.foodpanda") {
                 Log.d(TAG, "Panda window event: ${it.className}")

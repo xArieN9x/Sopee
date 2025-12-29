@@ -209,7 +209,7 @@ class VpnDnsService : VpnService() {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("CedokBooster DNS Active")
             .setContentText("DNS: $dnsServer")
-            .setSmallIcon(R.drawable.ic_launcher_foreground) // Guna icon yang sama dengan app
+            .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)

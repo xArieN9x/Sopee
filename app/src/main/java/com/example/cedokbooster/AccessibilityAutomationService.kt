@@ -64,7 +64,8 @@ class AccessibilityAutomationService : AccessibilityService() {
         // Register broadcast receiver
         val filter = IntentFilter().apply {
             addAction("DO_ALL_JOB_TRIGGER")
-            addAction(FORCE_CLOSE_PANDA)
+            addAction(Companion.FORCE_CLOSE_PANDA)
+            addAction("com.example.cedokbooster.GPS_LOCK_ACHIEVED")
         }
         LocalBroadcastManager.getInstance(this).registerReceiver(broadcastReceiver, filter)
     }

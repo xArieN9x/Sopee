@@ -31,7 +31,7 @@ class AccessibilityAutomationService : AccessibilityService() {
     private var isAutomationRunning = false
     private var currentStep = 0
 
-    // Broadcast receiver untuk trigger dari MainActivity
+    // Dalam broadcastReceiver - TAMBAH handler untuk GPS_LOCK_ACHIEVED
     private val broadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
@@ -40,13 +40,18 @@ class AccessibilityAutomationService : AccessibilityService() {
                     Log.d(TAG, "DO_ALL_JOB_TRIGGER received")
                     if (!isAutomationRunning) {
                         startAutomationSequence()
-                    } else {
-                        Log.d(TAG, "Automation already running, skipping")
                     }
                 }
                 FORCE_CLOSE_PANDA -> {
                     Log.d(TAG, "FORCE_CLOSE_PANDA received")
                     performForceClosePanda()
+                }
+                // ✅ TAMBAH handler untuk GPS lock
+                "com.example.cedokbooster.GPS_LOCK_ACHIEVED" -> {
+                    Log.d(TAG, "GPS_LOCK_ACHIEVED received - Launching Panda")
+                    handler.postDelayed({
+                        launchPandaApp()
+                    }, 1000)
                 }
             }
         }

@@ -54,15 +54,19 @@ class AppCoreEngService : Service() {
         override fun onLocationChanged(location: Location) {
             val accuracy = location.accuracy
             Log.d(TAG, "GPS Update: Accuracy = $accuracy meters")
-
+    
             if (accuracy < 25f && gpsStatus != "locked") {
                 gpsStatus = "locked"
                 Log.d(TAG, "GPS LOCKED! Accuracy: $accuracy meters")
                 broadcastStatus()
                 
-                // Trigger auto-launch Panda
-                val intent = Intent(GPS_LOCK_ACHIEVED)
-                LocalBroadcastManager.getInstance(this@AppCoreEngService).sendBroadcast(intent)
+                // ✅ TAMBAH DELAY sebelum launch Panda
+                Handler(Looper.getMainLooper()).postDelayed({
+                    // Trigger auto-launch Panda
+                    val intent = Intent(GPS_LOCK_ACHIEVED)
+                    LocalBroadcastManager.getInstance(this@AppCoreEngService).sendBroadcast(intent)
+                    Log.d(TAG, "GPS_LOCK_ACHIEVED broadcast sent (delayed)")
+                }, 2000) // Delay 2 saat
             } else if (accuracy >= 25f && gpsStatus == "locked") {
                 gpsStatus = "stabilizing"
                 broadcastStatus()

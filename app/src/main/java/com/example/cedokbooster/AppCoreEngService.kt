@@ -121,12 +121,11 @@ class AppCoreEngService : Service() {
         // Start anchor service
         startService(Intent(this, AnchorService::class.java))
 
-        // ❌ BUANG/COMMENT: Start floating widget dari sini
-        // Widget akan start SEKALI dari MainActivity.onCreate()
-        // startService(Intent(this, FloatingWidgetService::class.java).apply {
-        //     action = FloatingWidgetService.ACTION_START_WIDGET
-        //     putExtra("isActive", true)
-        // })
+        // Start floating widget
+        startService(Intent(this, FloatingWidgetService::class.java).apply {
+            action = FloatingWidgetService.ACTION_START_WIDGET
+            putExtra("isActive", true)
+        })
 
         broadcastStatus()
     }
@@ -145,12 +144,11 @@ class AppCoreEngService : Service() {
         // Stop network conditioning
         stopNetworkConditioning()
 
-        // ❌ BUANG/COMMENT: Update floating widget dari sini
-        // Widget akan update sendiri melalui broadcast CORE_ENGINE_STATUS_UPDATE
-        // startService(Intent(this, FloatingWidgetService::class.java).apply {
-        //     action = FloatingWidgetService.ACTION_START_WIDGET
-        //     putExtra("isActive", false)
-        // })
+        // Update floating widget
+        startService(Intent(this, FloatingWidgetService::class.java).apply {
+            action = FloatingWidgetService.ACTION_START_WIDGET
+            putExtra("isActive", false)
+        })
 
         // Trigger force close Panda via accessibility
         val intent = Intent(AccessibilityAutomationService.FORCE_CLOSE_PANDA)

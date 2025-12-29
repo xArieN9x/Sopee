@@ -263,4 +263,13 @@ class AppCoreEngService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    override fun onDestroy() {
+        super.onDestroy()
+        try {
+            unregisterReceiver(statusQueryReceiver)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error unregistering receiver", e)
+        }
+    }
 }

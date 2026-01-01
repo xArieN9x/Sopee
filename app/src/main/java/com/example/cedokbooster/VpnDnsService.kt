@@ -111,23 +111,18 @@ class VpnDnsService : VpnService() {
                 builder.setMetered(false)
             }
             
-            // ✅ FORCE INTERFACE METRIC 
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    // Gunakan reflection untuk setUnderlyingNetworks kalau ada
-                    val method = builder.javaClass.getMethod("setUnderlyingNetworks", Array<Network>::class.java)
-                    // Biarkan null untuk guna default
+            // ✅ OPTIONAL: Set session name untuk identification
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                try {
+                    builder.setConfigureIntent(null) // No configuration intent needed
+                } catch (e: Exception) {
+                    // Ignore
                 }
-            } catch (e: Exception) {
-                // Ignore, method tak support
             }
             
             builder.establish()?.let { fd ->
                 vpnInterface = fd
-                
-                // ✅ POST-ESTABLISHMENT FIX: 
                 forceRouteUpdate(mobileGateway)
-                
                 isRunning.set(true)
                 LogUtil.d(TAG, "✅ VPN established dengan DNS: $dnsServers | Gateway: $mobileGateway")
                 true

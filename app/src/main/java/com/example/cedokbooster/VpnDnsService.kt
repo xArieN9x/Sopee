@@ -80,30 +80,25 @@ class VpnDnsService : VpnService() {
             val builder = Builder()
                 .setSession("CB-DNS")
                 .addAddress("10.0.0.2", 32)
-                .addRoute("0.0.0.0", 0)           // Route semua IPv4
-                .addRoute("::/0", 0)              // Route/block IPv6
+                .addRoute("0.0.0.0", 0)           // IPv4 semua
                 .setMtu(1400)
-                .setBlocking(false)               // ✅ False untuk Realme
+                .setBlocking(false)               // Realme perlu false
             
-            // Add DNS servers
+            // Add DNS
             dnsServers.forEach { dns ->
                 builder.addDnsServer(dns)
             }
             
-            // ✅ Fix untuk Realme routing issue
-            builder.addRoute("10.0.0.0", 8)  // Route local VPN network
+            // Route local network
+            builder.addRoute("10.0.0.0", 8)
             
-            // Set metered status untuk Android Q+
+            // Metered setting untuk Android Q+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 builder.setMetered(false)
             }
             
-            // ✅ PENTING: Allow semua apps
-            // builder.addDisallowedApplication(packageName) // REMOVE ini
-            
             builder.establish()?.let { fd ->
                 vpnInterface = fd
-                
                 isRunning.set(true)
                 LogUtil.d(TAG, "VPN established dengan DNS: $dnsServers")
                 true

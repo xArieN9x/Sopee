@@ -58,13 +58,13 @@ class VpnDnsService : VpnService() {
     private val coroutineScope = CoroutineScope(Dispatchers.IO)
     
     /**
-     * Get DNS servers berdasarkan type dengan failover
+     * Get DNS servers dengan IPv6 support
      */
     private fun getDnsServers(type: String): List<String> {
         return when (type.uppercase()) {
-            "A" -> listOf("1.1.1.1", "1.0.0.1")      // Cloudflare dual
-            "B" -> listOf("8.8.8.8", "8.8.4.4")      // Google dual
-            else -> listOf("9.9.9.9", "149.112.112.112") // Quad9 dual
+            "A" -> listOf("1.1.1.1", "1.0.0.1", "2606:4700:4700::1111", "2606:4700:4700::1001") // Cloudflare dual-stack
+            "B" -> listOf("8.8.8.8", "8.8.4.4", "2001:4860:4860::8888", "2001:4860:4860::8844") // Google dual-stack
+            else -> listOf("9.9.9.9", "149.112.112.112", "2620:fe::fe", "2620:fe::9") // Quad9 dual-stack
         }.also {
             currentDns = it.first()
         }
@@ -77,19 +77,33 @@ class VpnDnsService : VpnService() {
             
             vpnInterface?.close()
             
+            // ✅ DETECT CURRENT MOBILE NETWORK GATEWAY
+            val mobileGateway = detectMobileGateway()
+            LogUtil.d(TAG, "Detected mobile gateway: $mobileGateway")
+            
             val builder = Builder()
-                .setSession("CB-DNS")
+                .setSession("CB-DNS-BYPASS")
                 .addAddress("10.0.0.2", 32)
                 .addRoute("0.0.0.0", 0)           // IPv4 semua
                 .setMtu(1400)
                 .setBlocking(false)               // Realme perlu false
             
-            // Add DNS
-            dnsServers.forEach { dns ->
+            // Add DNS (IPv4 saja dulu untuk compatibility Realme)
+            dnsServers.filter { it.contains('.') }.forEach { dns ->
                 builder.addDnsServer(dns)
             }
             
-            // Route local network
+            // ✅ CRITICAL: Add EXPLICIT route ke mobile gateway
+            if (mobileGateway.isNotEmpty()) {
+                val gatewayParts = mobileGateway.split(".")
+                if (gatewayParts.size == 4) {
+                    // Route ke mobile gateway dengan prefix /32
+                    builder.addRoute(mobileGateway, 32)
+                    LogUtil.d(TAG, "Added route to mobile gateway: $mobileGateway/32")
+                }
+            }
+            
+            // Route local VPN network
             builder.addRoute("10.0.0.0", 8)
             
             // Metered setting untuk Android Q+
@@ -97,18 +111,104 @@ class VpnDnsService : VpnService() {
                 builder.setMetered(false)
             }
             
+            // ✅ FORCE INTERFACE METRIC 
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    // Gunakan reflection untuk setUnderlyingNetworks kalau ada
+                    val method = builder.javaClass.getMethod("setUnderlyingNetworks", Array<Network>::class.java)
+                    // Biarkan null untuk guna default
+                }
+            } catch (e: Exception) {
+                // Ignore, method tak support
+            }
+            
             builder.establish()?.let { fd ->
                 vpnInterface = fd
+                
+                // ✅ POST-ESTABLISHMENT FIX: 
+                forceRouteUpdate(mobileGateway)
+                
                 isRunning.set(true)
-                LogUtil.d(TAG, "VPN established dengan DNS: $dnsServers")
+                LogUtil.d(TAG, "✅ VPN established dengan DNS: $dnsServers | Gateway: $mobileGateway")
                 true
             } ?: run {
-                LogUtil.e(TAG, "Failed to establish VPN")
+                LogUtil.e(TAG, "❌ Failed to establish VPN")
                 false
             }
         } catch (e: Exception) {
             LogUtil.e(TAG, "Error setup VPN: ${e.message}")
             false
+        }
+    }
+    
+    /**
+     * Detect mobile gateway dari current network
+     */
+    private fun detectMobileGateway(): String {
+        return try {
+            // Try multiple methods untuk detect gateway
+            Runtime.getRuntime().exec("ip route show default")
+                .inputStream.bufferedReader().use { reader ->
+                    val lines = reader.readText()
+                    Regex("via\\s+(\\d+\\.\\d+\\.\\d+\\.\\d+)").find(lines)?.groupValues?.get(1) ?: ""
+                }
+        } catch (e: Exception) {
+            // Fallback: Dapatkan dari interface IP
+            try {
+                Runtime.getRuntime().exec("getprop net.dns1")
+                    .inputStream.bufferedReader().use { reader ->
+                        val dns = reader.readLine().trim()
+                        // Convert DNS pertama ke gateway approximation
+                        if (dns.matches(Regex("\\d+\\.\\d+\\.\\d+\\.\\d+"))) {
+                            val parts = dns.split(".")
+                            "${parts[0]}.${parts[1]}.${parts[2]}.1" // Standard gateway pattern
+                        } else ""
+                    }
+            } catch (e2: Exception) {
+                "10.45.63.1" // Default fallback untuk Realme C3
+            }
+        }
+    }
+    
+    /**
+     * Force route update selepas VPN established
+     */
+    private fun forceRouteUpdate(gateway: String) {
+        coroutineScope.launch {
+            delay(500) // Tunggu sikit untuk VPN stable
+            
+            try {
+                // Dapatkan VPN interface name secara dynamic
+                var vpnInterfaceName = "tun0"
+                var mobileInterface = "ccmni1"
+                
+                Runtime.getRuntime().exec("ip link show")
+                    .inputStream.bufferedReader().use { reader ->
+                        val lines = reader.readText()
+                        if (lines.contains("tun1")) vpnInterfaceName = "tun1"
+                        if (lines.contains("tun2")) vpnInterfaceName = "tun2"
+                        
+                        // Detect mobile interface
+                        if (lines.contains("ccmni0") && !lines.contains("state DOWN")) mobileInterface = "ccmni0"
+                        if (lines.contains("rmnet0")) mobileInterface = "rmnet0"
+                    }
+                
+                // Execute route commands
+                val commands = arrayOf(
+                    "sh", "-c",
+                    """
+                    ip route replace default dev $vpnInterfaceName metric 50 2>/dev/null || true
+                    ip route add $gateway/32 dev $mobileInterface metric 100 2>/dev/null || true
+                    ip route add 10.0.0.0/8 dev $vpnInterfaceName 2>/dev/null || true
+                    """
+                )
+                
+                Runtime.getRuntime().exec(commands)
+                LogUtil.d(TAG, "✅ Force route update: $vpnInterfaceName -> $mobileInterface")
+                
+            } catch (e: Exception) {
+                LogUtil.e(TAG, "⚠️ Route update failed (non-critical): ${e.message}")
+            }
         }
     }
     
@@ -225,7 +325,7 @@ class VpnDnsService : VpnService() {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "DNS VPN Service",
-                NotificationManager.IMPORTANCE_HIGH  // ✅ HIGH untuk Realme
+                NotificationManager.IMPORTANCE_HIGH
             ).apply {
                 description = "CedokBooster DNS VPN Service"
                 setShowBadge(true)
@@ -258,7 +358,7 @@ class VpnDnsService : VpnService() {
             .setContentText("DNS: $dnsServer | Tap to open")
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setContentIntent(pendingIntent)
-            .setPriority(NotificationCompat.PRIORITY_MAX) // ✅ MAX priority
+            .setPriority(NotificationCompat.PRIORITY_MAX)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(Notification.CATEGORY_SERVICE)

@@ -62,21 +62,14 @@
                 android:value="network_conditioning" />
         </service>
 
-        <!-- VPN Service untuk DNS manipulation -->
-        <!--<service
-            android:name=".VpnDnsService"
-            android:permission="android.permission.BIND_VPN_SERVICE"
-            android:foregroundServiceType="specialUse|connectedDevice"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.net.VpnService" />
-            </intent-filter>
-        </service> -->
-
+        <!-- Dalam <service> VpnDnsService -->
         <service
             android:name=".VpnDnsService"
             android:permission="android.permission.BIND_VPN_SERVICE"
-            android:exported="true">  <!-- ✅ TUKAR KE TRUE -->
+            android:exported="true"
+            android:foregroundServiceType="connectedDevice"
+            android:stopWithTask="false"  <!-- ✅ PENTING: Keep alive walaupun app closed -->
+            android:isolatedProcess="false">
             <intent-filter>
                 <action android:name="com.example.cedokbooster.START_VPN" />
                 <action android:name="com.example.cedokbooster.STOP_VPN" />

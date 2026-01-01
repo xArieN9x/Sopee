@@ -111,15 +111,6 @@ class VpnDnsService : VpnService() {
                 builder.setMetered(false)
             }
             
-            // ✅ OPTIONAL: Set session name untuk identification
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                try {
-                    builder.setConfigureIntent(null) // No configuration intent needed
-                } catch (e: Exception) {
-                    // Ignore
-                }
-            }
-            
             builder.establish()?.let { fd ->
                 vpnInterface = fd
                 forceRouteUpdate(mobileGateway)

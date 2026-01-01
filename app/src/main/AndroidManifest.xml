@@ -68,7 +68,7 @@
             android:permission="android.permission.BIND_VPN_SERVICE"
             android:exported="true"
             android:foregroundServiceType="connectedDevice"
-            android:stopWithTask="false"  <!-- ✅ PENTING: Keep alive walaupun app closed -->
+            android:stopWithTask="false"
             android:isolatedProcess="false">
             <intent-filter>
                 <action android:name="com.example.cedokbooster.START_VPN" />

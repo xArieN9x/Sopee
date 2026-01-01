@@ -248,14 +248,14 @@ class MainActivity : AppCompatActivity() {
             pendingDNS = dnsType
         } else {
             // DAH APPROVE: Start CE seperti biasa
-            startCE(dnsType) // Function existing Tuan
+            startCoreEngine(dnsType) // Function existing Tuan
         }
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         if (requestCode == 100 && resultCode == RESULT_OK) {
             // SEKARANG VPN DAH APPROVE
-            startCE(pendingDNS) // Start CE dengan DNS yang user pilih
+            startCoreEngine(pendingDNS) // Start CE dengan DNS yang user pilih
         }
     }
 

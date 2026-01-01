@@ -4,14 +4,18 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
+import android.graphics.Color
 import android.net.VpnService
 import android.os.Build
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -50,6 +54,7 @@ class VpnDnsService : VpnService() {
     
     private var vpnInterface: ParcelFileDescriptor? = null
     private var notificationManager: NotificationManager? = null
+    private var wakeLock: PowerManager.WakeLock? = null
     private val coroutineScope = CoroutineScope(Dispatchers.IO)
     
     /**
@@ -86,24 +91,18 @@ class VpnDnsService : VpnService() {
             }
             
             // ✅ Fix untuk Realme routing issue
-            // Add specific route untuk mobile gateway
-            builder.addRoute("10.84.100.208", 32)  // Route ke mobile gateway
+            builder.addRoute("10.0.0.0", 8)  // Route local VPN network
             
             // Set metered status untuk Android Q+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 builder.setMetered(false)
             }
             
+            // ✅ PENTING: Allow semua apps
+            // builder.addDisallowedApplication(packageName) // REMOVE ini
+            
             builder.establish()?.let { fd ->
                 vpnInterface = fd
-                
-                // ✅ Force routing priority (non-root masih boleh untuk VPN interface sendiri)
-                try {
-                    Runtime.getRuntime().exec("ip route replace default dev tun1 metric 100")
-                    LogUtil.d(TAG, "Route metric updated to 100")
-                } catch (e: Exception) {
-                    LogUtil.e(TAG, "Cannot update route metric: ${e.message}")
-                }
                 
                 isRunning.set(true)
                 LogUtil.d(TAG, "VPN established dengan DNS: $dnsServers")
@@ -120,6 +119,13 @@ class VpnDnsService : VpnService() {
     
     private fun startVpnBackground(dnsType: String) {
         coroutineScope.launch {
+            // ✅ Check OVERLAY permission untuk Realme
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                if (!android.provider.Settings.canDrawOverlays(this@VpnDnsService)) {
+                    LogUtil.e(TAG, "No OVERLAY permission - Realme may kill service")
+                }
+            }
+            
             val dnsServers = getDnsServers(dnsType)
             
             if (isRunning.get() && currentDns == dnsServers.first()) {
@@ -127,8 +133,24 @@ class VpnDnsService : VpnService() {
                 return@launch
             }
             
-            if (setupVpn(dnsType)) {
+            // ✅ Multiple retry untuk Realme
+            var success = false
+            var retryCount = 0
+            
+            while (!success && retryCount < 3) {
+                success = setupVpn(dnsType)
+                if (!success) {
+                    delay(1000L * (retryCount + 1))
+                    retryCount++
+                    LogUtil.d(TAG, "Retry VPN setup attempt $retryCount")
+                }
+            }
+            
+            if (success) {
+                // ✅ Acquire wake lock sebelum show notification
+                acquireWakeLock()
                 showNotification(dnsServers.first())
+                
                 LogUtil.d(TAG, "VPN started dengan DNS: $dnsServers")
                 
                 sendBroadcast(Intent("VPN_DNS_STATUS").apply {
@@ -136,9 +158,28 @@ class VpnDnsService : VpnService() {
                     putExtra("dns", dnsServers.first())
                 })
             } else {
-                LogUtil.e(TAG, "Failed to start VPN")
+                LogUtil.e(TAG, "Failed to start VPN after $retryCount attempts")
                 stopSelf()
             }
+        }
+    }
+    
+    /**
+     * Acquire wake lock untuk prevent Realme kill service
+     */
+    private fun acquireWakeLock() {
+        try {
+            val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "CedokBooster:VPNLock"
+            ).apply {
+                setReferenceCounted(false)
+                acquire(60 * 60 * 1000L) // 1 hour
+                LogUtil.d(TAG, "WakeLock acquired")
+            }
+        } catch (e: Exception) {
+            LogUtil.e(TAG, "Failed to acquire WakeLock: ${e.message}")
         }
     }
     
@@ -153,6 +194,14 @@ class VpnDnsService : VpnService() {
                 
                 vpnInterface?.close()
                 vpnInterface = null
+                
+                // ✅ Release wake lock
+                wakeLock?.let {
+                    if (it.isHeld) {
+                        it.release()
+                        LogUtil.d(TAG, "WakeLock released")
+                    }
+                }
                 
                 notificationManager?.cancel(NOTIFICATION_ID)
                 
@@ -172,7 +221,7 @@ class VpnDnsService : VpnService() {
     }
     
     /**
-     * Show foreground notification
+     * Show foreground notification dengan HIGH priority
      */
     private fun showNotification(dnsServer: String) {
         notificationManager = getSystemService(NotificationManager::class.java)
@@ -181,10 +230,13 @@ class VpnDnsService : VpnService() {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 "DNS VPN Service",
-                NotificationManager.IMPORTANCE_LOW
+                NotificationManager.IMPORTANCE_HIGH  // ✅ HIGH untuk Realme
             ).apply {
                 description = "CedokBooster DNS VPN Service"
-                setShowBadge(false)
+                setShowBadge(true)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                setSound(null, null)
+                enableVibration(false)
             }
             notificationManager?.createNotificationChannel(channel)
         }
@@ -197,20 +249,36 @@ class VpnDnsService : VpnService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         
+        // ✅ Stop action button
+        val stopIntent = Intent(this, VpnDnsService::class.java).apply {
+            action = ACTION_STOP_VPN
+        }
+        val stopPendingIntent = PendingIntent.getService(
+            this, 1, stopIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("CedokBooster DNS Active")
-            .setContentText("DNS: $dnsServer")
+            .setContentTitle("🛡️ CedokBooster DNS Active")
+            .setContentText("DNS: $dnsServer | Tap to open")
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setContentIntent(pendingIntent)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_MAX) // ✅ MAX priority
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(Notification.CATEGORY_SERVICE)
-            .setVisibility(NotificationCompat.VISIBILITY_SECRET)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .addAction(
+                android.R.drawable.ic_menu_close_clear_cancel,
+                "Stop VPN",
+                stopPendingIntent
+            )
+            .setColor(Color.parseColor("#2196F3"))
+            .setAutoCancel(false)
             .build()
         
         startForeground(NOTIFICATION_ID, notification)
-        LogUtil.d(TAG, "Foreground notification shown")
+        LogUtil.d(TAG, "Foreground notification shown with MAX priority")
     }
     
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -236,6 +304,15 @@ class VpnDnsService : VpnService() {
     
     override fun onDestroy() {
         LogUtil.d(TAG, "Service destroying...")
+        
+        // ✅ Cleanup wake lock
+        wakeLock?.let {
+            if (it.isHeld) {
+                it.release()
+                LogUtil.d(TAG, "WakeLock released in onDestroy")
+            }
+        }
+        
         stopVpn()
         super.onDestroy()
     }

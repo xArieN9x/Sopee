@@ -29,9 +29,9 @@ class VpnDnsService : VpnService() {
         private const val CHANNEL_ID = "vpn_dns_channel"
         
         // DNS Servers untuk projek Tuan
-        private const val DNS_A = "156.154.70.1"
-        private const val DNS_B = "1.1.1.1"
-        private const val DNS_DEFAULT = "8.8.8.8"
+        private const val DNS_A = "1.1.1.1"
+        private const val DNS_B = "8.8.8.8"
+        private const val DNS_DEFAULT = "1.0.0.1"
         
         // Actions untuk control service
         const val ACTION_START_VPN = "com.example.cedokbooster.START_VPN"

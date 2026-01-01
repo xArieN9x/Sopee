@@ -16,6 +16,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import kotlinx.coroutines.*
+import android.net.VpnService
 
 import com.example.cedokbooster.AccessibilityAutomationService.Companion.DO_ALL_JOB_TRIGGER
 
@@ -32,6 +33,7 @@ class MainActivity : AppCompatActivity() {
 
     private var currentDns: String = "none"
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private var pendingDNS = "A" // default
 
     companion object {
         private const val TAG = "MainActivity"

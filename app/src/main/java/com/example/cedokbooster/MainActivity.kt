@@ -88,7 +88,8 @@ class MainActivity : AppCompatActivity() {
                 openAccessibilitySettings()
                 return@setOnClickListener
             }
-            startCoreEngine("A")
+            startCEWithVpnCheck("A")
+            //startCoreEngine("A")
         }
 
         btnOnB.setOnClickListener {
@@ -98,7 +99,8 @@ class MainActivity : AppCompatActivity() {
                 openAccessibilitySettings()
                 return@setOnClickListener
             }
-            startCoreEngine("B")
+            startCEWithVpnCheck("B")
+            //startCoreEngine("B")
         }
 
         btnDoAllJob.setOnClickListener {
@@ -230,6 +232,28 @@ class MainActivity : AppCompatActivity() {
                 startActivity(intent)
                 Toast.makeText(this, "Sila enable overlay permission untuk floating widget", Toast.LENGTH_LONG).show()
             }
+        }
+    }
+
+    private fun startCEWithVpnCheck(dnsType: String) {
+        // 1. Check jika VPN dah approve
+        val vpnIntent = VpnService.prepare(this)
+        
+        if (vpnIntent != null) {
+            // BELUM APPROVE: Show popup dulu
+            startActivityForResult(vpnIntent, 100)
+            // Simpan dnsType untuk guna lepas approve
+            pendingDNS = dnsType
+        } else {
+            // DAH APPROVE: Start CE seperti biasa
+            startCE(dnsType) // Function existing Tuan
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        if (requestCode == 100 && resultCode == RESULT_OK) {
+            // SEKARANG VPN DAH APPROVE
+            startCE(pendingDNS) // Start CE dengan DNS yang user pilih
         }
     }
 

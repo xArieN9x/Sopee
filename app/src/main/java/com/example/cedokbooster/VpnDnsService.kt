@@ -65,9 +65,6 @@ class VpnDnsService : VpnService() {
         }
     }
     
-    /**
-     * Setup VPN dengan blocking mode + multiple DNS
-     */
     private fun setupVpn(dnsType: String): Boolean {
         return try {
             val dnsServers = getDnsServers(dnsType)
@@ -75,21 +72,34 @@ class VpnDnsService : VpnService() {
             
             vpnInterface?.close()
             
-            // ✅ SINGLE MODIFICATION - BLOCKING MODE + MULTI DNS
+            // Dapatkan current gateway dari mobile network
+            // Realme C3 guna ccmni0 dengan gateway 10.84.100.208
+            val mobileGateway = "10.84.100.208"
+            
             val builder = Builder()
                 .setSession("CB-DNS")
                 .addAddress("10.0.0.2", 32)
-                .addRoute("0.0.0.0", 0)          // Route semua IPv4
-                .setMtu(1400)                   // MTU optimum Realme
-                .setBlocking(true)              // ✅ BLOCKING MODE (PENTING!)
+                .addRoute("0.0.0.0", 0)           // Route semua IPv4
+                .addDnsServer("1.1.1.1")
+                .addDnsServer("1.0.0.1")
+                .setMtu(1400)
+                .setBlocking(false)               // ✅ False dulu
+                .allowFamily(NetworkFamily.INET)  // IPv4 saja dulu
             
-            // Add semua DNS servers
-            dnsServers.forEach { dns ->
-                builder.addDnsServer(dns)
+            // ✅ PENTING: Explicitly add route dengan gateway betul
+            // builder.addRoute("0.0.0.0", 0, mobileGateway) // Tak support
+            
+            // Alternatif: Set interface metric tinggi supaya VPN priority
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                builder.setMetered(false) // Consider unmetered
             }
             
             builder.establish()?.let { fd ->
                 vpnInterface = fd
+                
+                // ✅ Force route update selepas establish
+                updateRoutesManually()
+                
                 isRunning.set(true)
                 LogUtil.d(TAG, "VPN established dengan DNS: $dnsServers")
                 true
@@ -104,8 +114,22 @@ class VpnDnsService : VpnService() {
     }
     
     /**
-     * Start VPN dalam background thread
+     * Manual route update untuk Realme C3
      */
+    private fun updateRoutesManually() {
+        try {
+            // Execute via shell (non-root masih boleh untuk VPN sendiri)
+            Runtime.getRuntime().exec(arrayOf(
+                "sh", "-c", 
+                "ip route replace default dev tun1 metric 100 && " +
+                "ip route add 10.84.100.208/32 dev ccmni0"
+            ))
+            LogUtil.d(TAG, "Manual route update executed")
+        } catch (e: Exception) {
+            LogUtil.e(TAG, "Route update failed: ${e.message}")
+        }
+    }
+    
     private fun startVpnBackground(dnsType: String) {
         coroutineScope.launch {
             val dnsServers = getDnsServers(dnsType)

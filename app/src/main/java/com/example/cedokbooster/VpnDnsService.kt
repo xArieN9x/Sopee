@@ -234,7 +234,6 @@ class VpnDnsService : VpnService() {
             }
         }
     }
-    }
     
     private fun startVpnBackground(dnsType: String) {
         coroutineScope.launch {

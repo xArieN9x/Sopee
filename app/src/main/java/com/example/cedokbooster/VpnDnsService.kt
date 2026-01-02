@@ -132,26 +132,32 @@ class VpnDnsService : VpnService() {
      */
     private fun detectMobileGateway(): String {
         return try {
-            // Try multiple methods untuk detect gateway
-            Runtime.getRuntime().exec("ip route show default")
+            // Method 1: Try get from current interface
+            Runtime.getRuntime().exec("ip addr show ccmni0")
                 .inputStream.bufferedReader().use { reader ->
                     val lines = reader.readText()
-                    Regex("via\\s+(\\d+\\.\\d+\\.\\d+\\.\\d+)").find(lines)?.groupValues?.get(1) ?: ""
+                    Regex("inet\\s+(\\d+\\.\\d+\\.\\d+\\.\\d+)").find(lines)?.groupValues?.get(1)?.let { ip ->
+                        // Convert IP to gateway (last octet = 1)
+                        val parts = ip.split(".")
+                        if (parts.size == 4) {
+                            "${parts[0]}.${parts[1]}.${parts[2]}.1"
+                        } else ""
+                    } ?: ""
                 }
         } catch (e: Exception) {
-            // Fallback: Dapatkan dari interface IP
+            // Fallback: Realme C3 default gateway patterns
+            // Try detect dari current IP
             try {
                 Runtime.getRuntime().exec("getprop net.dns1")
                     .inputStream.bufferedReader().use { reader ->
                         val dns = reader.readLine().trim()
-                        // Convert DNS pertama ke gateway approximation
                         if (dns.matches(Regex("\\d+\\.\\d+\\.\\d+\\.\\d+"))) {
                             val parts = dns.split(".")
-                            "${parts[0]}.${parts[1]}.${parts[2]}.1" // Standard gateway pattern
-                        } else ""
+                            "${parts[0]}.${parts[1]}.${parts[2]}.1"
+                        } else "10.34.122.1" // Default berdasarkan IP dalam log (10.34.122.120)
                     }
             } catch (e2: Exception) {
-                "10.45.63.1" // Default fallback untuk Realme C3
+                "10.34.122.1" // Hardcode berdasarkan routing table
             }
         }
     }

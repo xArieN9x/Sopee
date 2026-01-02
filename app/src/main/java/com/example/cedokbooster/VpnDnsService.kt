@@ -114,98 +114,67 @@ class VpnDnsService : VpnService() {
             
             vpnInterface?.close()
             
-            // ✅ DETECT CURRENT MOBILE NETWORK GATEWAY
             val mobileGateway = detectMobileGateway()
             LogUtil.d(TAG, "Detected mobile gateway: $mobileGateway")
             
             val builder = Builder()
-                .setSession("CB-DNS-BYPASS")
+                .setSession("CB-DNS")
                 .addAddress("10.0.0.2", 32)
-                .addRoute("0.0.0.0", 0)           // IPv4 semua
+                .addRoute("0.0.0.0", 0)
                 .setMtu(1400)
+                .setBlocking(true)  // ✅ REALME PERLU TRUE
             
-            // ✅ EXPERIMENT 1: SET BLOCKING MODE BASED ON REALME VERSION
-            val realmeModel = Build.MODEL.lowercase()
-            val isRealmeC3 = realmeModel.contains("c3") || realmeModel.contains("rmx")
-            
-            if (isRealmeC3) {
-                builder.setBlocking(true)
-                LogUtil.d(TAG, "Realme C3 detected - Enabling blocking mode")
-            } else {
-                builder.setBlocking(false)
-            }
-            
-            // Add DNS (IPv4 saja dulu untuk compatibility Realme)
+            // Add DNS
             dnsServers.filter { it.contains('.') }.forEach { dns ->
                 builder.addDnsServer(dns)
             }
             
-            // ✅ EXPERIMENT 2: ADD IPv6 ROUTING (FIX AMBIGUOUS OVERLOAD)
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    // Gunakan InetAddress untuk elak ambiguous overload
-                    val ipv6Default = java.net.InetAddress.getByName("::")
-                    builder.addRoute(ipv6Default, 0)
-                    LogUtil.d(TAG, "Added IPv6 route")
-                }
-            } catch (e: Exception) {
-                LogUtil.d(TAG, "IPv6 routing not supported: ${e.message}")
-            }
+            // ✅ REALME FIX: JANGAN EXCLUDE APA-APA
+            // Biar semua apps guna VPN termasok app kita
+            // Realme tak handle exclude apps dengan baik
             
-            // ✅ EXPERIMENT 3: EXCLUDE SYSTEM APPS UNTUK STABILITY
-            try {
-                val excludedPackages = listOf(
-                    "com.google.android.gms",
-                    "com.android.systemui",
-                    "com.google.android.googlequicksearchbox"
-                )
-                
-                excludedPackages.forEach { pkg ->
-                    try {
-                        packageManager.getPackageInfo(pkg, 0)
-                        builder.addDisallowedApplication(pkg)
-                        LogUtil.d(TAG, "Excluded package: $pkg")
-                    } catch (e: Exception) {
-                        // Package tidak wujud, ignore
-                    }
-                }
-            } catch (e: Exception) {
-                LogUtil.e(TAG, "Failed to exclude apps: ${e.message}")
-            }
-            
-            // ✅ CRITICAL: Add NETWORK ROUTE
+            // ✅ ADD PROPER ROUTES
             if (mobileGateway.isNotEmpty()) {
                 val gatewayParts = mobileGateway.split(".")
                 if (gatewayParts.size == 4) {
                     builder.addRoute(mobileGateway, 32)
-                    LogUtil.d(TAG, "Added route to mobile gateway: $mobileGateway/32")
-                    
                     val network = "${gatewayParts[0]}.${gatewayParts[1]}.${gatewayParts[2]}.0"
                     builder.addRoute(network, 24)
-                    LogUtil.d(TAG, "Added network route: $network/24")
                 }
             }
             
-            // Route local VPN network
             builder.addRoute("10.0.0.0", 8)
             
-            // Metered setting untuk Android Q+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 builder.setMetered(false)
             }
             
             builder.establish()?.let { fd ->
                 vpnInterface = fd
-                forceRouteUpdate(mobileGateway)
+                
+                // ✅ SIMPLE ROUTE UPDATE
+                coroutineScope.launch {
+                    delay(1000)
+                    try {
+                        Runtime.getRuntime().exec(arrayOf(
+                            "sh", "-c",
+                            "ip route replace default dev tun0 && ip route flush cache"
+                        ))
+                        LogUtil.d(TAG, "Simple route update done")
+                    } catch (e: Exception) {
+                        LogUtil.e(TAG, "Route update skipped")
+                    }
+                }
+                
                 isRunning.set(true)
-                LogUtil.d(TAG, "✅ VPN established dengan DNS: $dnsServers | Gateway: $mobileGateway | Blocking: ${isRealmeC3}")
+                LogUtil.d(TAG, "VPN ESTABLISHED")
                 true
             } ?: run {
-                LogUtil.e(TAG, "❌ Failed to establish VPN")
+                LogUtil.e(TAG, "Failed to establish VPN")
                 false
             }
         } catch (e: Exception) {
-            LogUtil.e(TAG, "Error setup VPN: ${e.message}")
+            LogUtil.e(TAG, "Error: ${e.message}")
             false
         }
     }

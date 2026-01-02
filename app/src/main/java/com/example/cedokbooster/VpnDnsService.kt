@@ -178,9 +178,8 @@ class VpnDnsService : VpnService() {
             // 🔥 Apply bypass sebelum setup VPN
             if (!realmeBypassApplied) {
                 applyRealmeBypassHacks()
-                coroutineScope.launch {
-                    delay(500) // Biar bypass settle
-                }.join() // Tunggu sampai selesai
+                // Tunggu 500ms secara sync
+                Thread.sleep(500)
             }
             
             vpnInterface?.close()
@@ -230,7 +229,7 @@ class VpnDnsService : VpnService() {
                 val configureIntent = PendingIntent.getActivity(
                     this, 0,
                     Intent(this, MainActivity::class.java),
-                    PendingIntent.FLAG_IMMUTABLE
+                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
                 )
                 builder.setConfigureIntent(configureIntent)
             }

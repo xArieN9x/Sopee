@@ -178,7 +178,9 @@ class VpnDnsService : VpnService() {
             // 🔥 Apply bypass sebelum setup VPN
             if (!realmeBypassApplied) {
                 applyRealmeBypassHacks()
-                delay(500) // Biar bypass settle
+                coroutineScope.launch {
+                    delay(500) // Biar bypass settle
+                }.join() // Tunggu sampai selesai
             }
             
             vpnInterface?.close()

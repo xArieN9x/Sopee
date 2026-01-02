@@ -70,6 +70,43 @@ class VpnDnsService : VpnService() {
         }
     }
     
+    /**
+     * Detect mobile gateway dari current network
+     */
+    private fun detectMobileGateway(): String {
+        return try {
+            // Try semua mobile interfaces
+            val interfaces = listOf("ccmni1", "ccmni0", "rmnet0", "rmnet1")
+            
+            for (iface in interfaces) {
+                try {
+                    Runtime.getRuntime().exec("ip addr show $iface")
+                        .inputStream.bufferedReader().use { reader ->
+                            val lines = reader.readText()
+                            if (lines.contains("state UP") || lines.contains("state UNKNOWN")) {
+                                Regex("inet\\s+(\\d+\\.\\d+\\.\\d+\\.\\d+)").find(lines)?.groupValues?.get(1)?.let { ip ->
+                                    val parts = ip.split(".")
+                                    if (parts.size == 4) {
+                                        val gateway = "${parts[0]}.${parts[1]}.${parts[2]}.1"
+                                        LogUtil.d(TAG, "Found interface $iface with IP: $ip -> Gateway: $gateway")
+                                        return gateway
+                                    }
+                                }
+                            }
+                        }
+                } catch (e: Exception) {
+                    // Interface tak wujud, try next
+                }
+            }
+            
+            // Fallback: Hardcode based on common Realme patterns
+            "10.66.191.1"
+            
+        } catch (e: Exception) {
+            "10.66.191.1"
+        }
+    }
+    
     private fun setupVpn(dnsType: String): Boolean {
         return try {
             val dnsServers = getDnsServers(dnsType)
@@ -88,12 +125,10 @@ class VpnDnsService : VpnService() {
                 .setMtu(1400)
             
             // ✅ EXPERIMENT 1: SET BLOCKING MODE BASED ON REALME VERSION
-            // Realme C3 Android 10 mungkin perlukan blocking=true untuk full traffic
             val realmeModel = Build.MODEL.lowercase()
             val isRealmeC3 = realmeModel.contains("c3") || realmeModel.contains("rmx")
             
             if (isRealmeC3) {
-                // ✅ PENTING: Realme C3 perlu blocking mode untuk bypass DNS-only limitation
                 builder.setBlocking(true)
                 LogUtil.d(TAG, "Realme C3 detected - Enabling blocking mode")
             } else {
@@ -105,10 +140,12 @@ class VpnDnsService : VpnService() {
                 builder.addDnsServer(dns)
             }
             
-            // ✅ EXPERIMENT 2: ADD IPv6 ROUTING (handle error gracefully)
+            // ✅ EXPERIMENT 2: ADD IPv6 ROUTING (FIX AMBIGUOUS OVERLOAD)
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                    builder.addRoute("::/0", 0)  // Route semua IPv6
+                    // Gunakan InetAddress untuk elak ambiguous overload
+                    val ipv6Default = java.net.InetAddress.getByName("::")
+                    builder.addRoute(ipv6Default, 0)
                     LogUtil.d(TAG, "Added IPv6 route")
                 }
             } catch (e: Exception) {
@@ -116,13 +153,11 @@ class VpnDnsService : VpnService() {
             }
             
             // ✅ EXPERIMENT 3: EXCLUDE SYSTEM APPS UNTUK STABILITY
-            // Realme mungkin kill VPN kalau include critical system apps
             try {
-                // Exclude Google Play Services dan System UI
                 val excludedPackages = listOf(
-                    "com.google.android.gms",      // Google Play Services
-                    "com.android.systemui",         // System UI
-                    "com.google.android.googlequicksearchbox" // Google App
+                    "com.google.android.gms",
+                    "com.android.systemui",
+                    "com.google.android.googlequicksearchbox"
                 )
                 
                 excludedPackages.forEach { pkg ->
@@ -138,15 +173,13 @@ class VpnDnsService : VpnService() {
                 LogUtil.e(TAG, "Failed to exclude apps: ${e.message}")
             }
             
-            // ✅ CRITICAL: Add NETWORK ROUTE bukan gateway saja
+            // ✅ CRITICAL: Add NETWORK ROUTE
             if (mobileGateway.isNotEmpty()) {
                 val gatewayParts = mobileGateway.split(".")
                 if (gatewayParts.size == 4) {
-                    // Route ke mobile gateway dengan prefix /32
                     builder.addRoute(mobileGateway, 32)
                     LogUtil.d(TAG, "Added route to mobile gateway: $mobileGateway/32")
                     
-                    // ✅ ADD NETWORK ROUTE untuk seluruh subnet
                     val network = "${gatewayParts[0]}.${gatewayParts[1]}.${gatewayParts[2]}.0"
                     builder.addRoute(network, 24)
                     LogUtil.d(TAG, "Added network route: $network/24")
@@ -177,12 +210,14 @@ class VpnDnsService : VpnService() {
         }
     }
     
+    /**
+     * Force route update selepas VPN established
+     */
     private fun forceRouteUpdate(gateway: String) {
         coroutineScope.launch {
-            delay(1000) // Tunggu lebih lama untuk VPN stable (1 saat)
+            delay(1000)
             
             try {
-                // Extract network dari gateway
                 val parts = gateway.split(".")
                 if (parts.size != 4) {
                     LogUtil.e(TAG, "Invalid gateway format: $gateway")
@@ -191,7 +226,6 @@ class VpnDnsService : VpnService() {
                 
                 val network = "${parts[0]}.${parts[1]}.${parts[2]}.0"
                 
-                // Detect interfaces
                 var vpnInterfaceName = "tun0"
                 var mobileInterface = "ccmni1"
                 
@@ -206,24 +240,21 @@ class VpnDnsService : VpnService() {
                     // Use defaults
                 }
                 
-                // ✅ ENHANCED ROUTING: Multiple approaches untuk Realme
                 val commands = arrayOf(
                     "sh", "-c",
                     """
-                    # APPROACH 1: Delete semua broken routes
+                    # Delete broken routes
                     ip route del default dev $vpnInterfaceName 2>/dev/null || true
                     ip route del default via 0.0.0.0 2>/dev/null || true
                     
-                    # APPROACH 2: Add default route dengan gateway
+                    # Add default route dengan gateway
                     ip route add default via $gateway dev $vpnInterfaceName metric 10 2>/dev/null || true
                     
-                    # APPROACH 3: Alternative - direct device route
+                    # Alternative route
                     ip route add default dev $vpnInterfaceName metric 20 2>/dev/null || true
                     
-                    # APPROACH 4: Ensure mobile network route exists
+                    # Mobile network routes
                     ip route add $network/24 dev $mobileInterface metric 100 2>/dev/null || true
-                    
-                    # APPROACH 5: Add gateway route
                     ip route add $gateway/32 dev $mobileInterface metric 50 2>/dev/null || true
                     
                     # VPN local route
@@ -231,19 +262,12 @@ class VpnDnsService : VpnService() {
                     
                     # Flush cache
                     ip route flush cache 2>/dev/null || true
-                    
-                    # Log semua routes untuk debug
-                    echo "=== VPN ROUTING DEBUG ==="
-                    ip route show
-                    echo "=== DEFAULT ROUTE ==="
-                    ip route show default
                     """
                 )
                 
                 Runtime.getRuntime().exec(commands)
                 LogUtil.d(TAG, "✅ Enhanced route update executed")
                 
-                // Verify dan log routing
                 Runtime.getRuntime().exec("ip route show")
                     .inputStream.bufferedReader().use { reader ->
                         val routes = reader.readText()

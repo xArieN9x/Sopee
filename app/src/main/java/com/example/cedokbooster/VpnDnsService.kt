@@ -366,14 +366,14 @@ class VpnDnsService : VpnService() {
                 )
                 removeCapMethod.isAccessible = true
                 
-                # Remove NOT_VPN capability (reverse psychology)
+                // Remove NOT_VPN capability (reverse psychology)
                 removeCapMethod.invoke(null, 15)  # 15 = NET_CAPABILITY_NOT_VPN
                 LogUtil.d(TAG, "✅ Reflection: NOT_VPN capability removed")
             } catch (e: Exception) {
                 // Ignore
             }
             
-            # Normal VPN setup sebagai backup
+            // Normal VPN setup sebagai backup
             val builder = Builder()
                 .setSession("CB-REFLECTION-NUKE")
                 .addAddress("10.1.1.2", 24)
@@ -409,11 +409,11 @@ class VpnDnsService : VpnService() {
             LogUtil.d(TAG, "⚔️ BATTLE PHASE ${index + 1}: $methodName")
             
             if (method()) {
-                # Verify battle success
+                // Verify battle success
                 if (verifyNuclearVictory()) {
                     LogUtil.d(TAG, "🎉 VICTORY with $methodName!")
                     
-                    # Log success metrics
+                    // Log success metrics
                     logBattleMetrics()
                     
                     return true
@@ -422,7 +422,7 @@ class VpnDnsService : VpnService() {
                 }
             }
             
-            # Cleanup sebelum next battle
+            // Cleanup sebelum next battle
             vpnInterface?.close()
             vpnInterface = null
             Thread.sleep(1000)
@@ -439,13 +439,13 @@ class VpnDnsService : VpnService() {
             val connectivityManager = getSystemService(CONNECTIVITY_SERVICE) 
                 as ConnectivityManager
             
-            # Check jika VPN active
+            // Check jika VPN active
             val network = connectivityManager.activeNetwork
             val caps = connectivityManager.getNetworkCapabilities(network)
             
             val hasVpn = caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
             
-            # Additional check: Test DNS
+            // Additional check: Test DNS
             if (hasVpn) {
                 testDnsResolution()
             }
@@ -464,16 +464,16 @@ class VpnDnsService : VpnService() {
     private fun testDnsResolution() {
         coroutineScope.launch {
             try {
-                # Try resolve test domain
+                // Try resolve test domain
                 val addresses = InetAddress.getAllByName("google.com")
                 LogUtil.d(TAG, "✅ DNS Test: ${addresses.size} addresses resolved")
                 
-                # Check jika guna DNS kita
+                // Check jika guna DNS kita
                 val dnsCheck = Runtime.getRuntime().exec("getprop net.dns1")
                 val dns = dnsCheck.inputStream.bufferedReader().readText().trim()
                 LogUtil.d(TAG, "Current DNS: $dns")
                 
-                # Success jika dapat 1.1.1.1 atau 8.8.8.8
+                // Success jika dapat 1.1.1.1 atau 8.8.8.8
                 if (dns.contains("1.1.1.1") || dns.contains("8.8.8.8")) {
                     LogUtil.d(TAG, "🎯 DNS HIJACK SUCCESSFUL!")
                 }
@@ -489,14 +489,14 @@ class VpnDnsService : VpnService() {
      */
     private fun logBattleMetrics() {
         try {
-            # Get routing info
+            // Get routing info
             Runtime.getRuntime().exec("ip route show").inputStream
                 .bufferedReader().use { reader ->
                     val routes = reader.readText()
                     LogUtil.d(TAG, "📊 FINAL ROUTES:\n$routes")
                 }
             
-            # Get DNS info
+            // Get DNS info
             Runtime.getRuntime().exec("getprop | grep dns").inputStream
                 .bufferedReader().use { reader ->
                     val dnsProps = reader.readText()
@@ -504,7 +504,7 @@ class VpnDnsService : VpnService() {
                 }
                 
         } catch (e: Exception) {
-            # Ignore
+            // Ignore
         }
     }
     
@@ -560,7 +560,7 @@ class VpnDnsService : VpnService() {
                 victory = launchNuclearBattle(dnsType)
                 
                 if (victory) {
-                    # Double verification
+                    // Double verification
                     delay(2000)
                     if (!verifyNuclearVictory()) {
                         LogUtil.w(TAG, "Victory verification failed, re-engaging...")
@@ -579,7 +579,7 @@ class VpnDnsService : VpnService() {
                 
                 LogUtil.d(TAG, "🎉 NUCLEAR BATTLE VICTORY! Method: $currentMethod")
                 
-                # Broadcast victory
+                // Broadcast victory
                 sendBroadcast(Intent("VPN_BATTLE_STATUS").apply {
                     putExtra("status", "VICTORY")
                     putExtra("method", currentMethod.name)
@@ -682,7 +682,7 @@ class VpnDnsService : VpnService() {
                 isRunning.set(false)
                 currentDns = "1.0.0.1"
                 
-                # Stop DNS proxy
+                // Stop DNS proxy
                 dnsProxyThread?.interrupt()
                 dnsProxySocket?.close()
                 dnsProxyThread = null
@@ -691,11 +691,11 @@ class VpnDnsService : VpnService() {
                 vpnInterface?.close()
                 vpnInterface = null
                 
-                # Restore Realme properties
+                // Restore Realme properties
                 try {
                     Runtime.getRuntime().exec("setprop oppo.service.datafree.enable 0")
                 } catch (e: Exception) {
-                    # Ignore
+                    // Ignore
                 }
                 
                 wakeLock?.let {

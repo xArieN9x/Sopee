@@ -7,6 +7,9 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.os.Build
 import android.os.IBinder
@@ -57,17 +60,26 @@ class VpnDnsService : VpnService() {
         fun getCurrentDns(): String = currentDns
     }
     
+    // Variants untuk cuba
+    private enum class VpnMethod {
+        CGNAT_FULL_ROUTE,    // Solution E (Main)
+        ROUTING_HIJACK,      // Solution A (Fallback 1)
+        NETWORK_BIND,        // Solution C (Fallback 2)
+        DEEP_HACK,           // Solution D (Fallback 3)
+        DNS_ONLY_PROXY       // Nuclear option
+    }
+    
     private var vpnInterface: ParcelFileDescriptor? = null
     private var notificationManager: NotificationManager? = null
     private var wakeLock: PowerManager.WakeLock? = null
-    private var dnsHijackSocket: DatagramSocket? = null
+    private var dnsProxySocket: DatagramSocket? = null
     private val coroutineScope = CoroutineScope(Dispatchers.IO)
-    
-    // 🔥 NEW: Realme bypass flag
-    private var realmeBypassApplied = false
+    private var currentMethod = VpnMethod.CGNAT_FULL_ROUTE
+    private var retryCount = 0
+    private var mobileGateway = "10.66.191.1"
     
     /**
-     * Get DNS servers dengan IPv6 support
+     * Get DNS servers
      */
     private fun getDnsServers(type: String): List<String> {
         return when (type.uppercase()) {
@@ -80,120 +92,26 @@ class VpnDnsService : VpnService() {
     }
     
     /**
-     * 🔥 NEW: Apply Realme VPN bypass hacks
+     * 🔥 MAIN METHOD: Solution E - CGNAT range + route rebuild (Paling orang berjaya)
      */
-    private fun applyRealmeBypassHacks() {
-        try {
-            // LAPIS 1: Write secure settings untuk full tunnel
-            try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    Settings.Global.putString(
-                        contentResolver,
-                        "vpn_default_profile",
-                        "{\"dns\":[\"1.1.1.1\"],\"full_tunnel\":true}"
-                    )
-                    LogUtil.d(TAG, "✅ Secure settings injected")
-                }
-            } catch (e: SecurityException) {
-                LogUtil.e(TAG, "❌ Need WRITE_SECURE_SETTINGS permission")
-            }
-            
-            // LAPIS 2: Reflection hack remove Realme restriction
-            try {
-                val networkCapabilities = Class.forName("android.net.NetworkCapabilities")
-                val removeCapMethod: Method = networkCapabilities.getDeclaredMethod(
-                    "removeCapability", 
-                    Int::class.javaPrimitiveType
-                )
-                
-                // Remove VPN transport restriction flag (0x00008000)
-                removeCapMethod.invoke(null, 0x00008000)
-                LogUtil.d(TAG, "✅ Reflection hack applied")
-            } catch (e: Exception) {
-                LogUtil.w(TAG, "⚠️ Reflection failed: ${e.message}")
-            }
-            
-            // LAPIS 3: Force system properties untuk DNS
-            try {
-                System.setProperty("net.dns1", "1.1.1.1")
-                System.setProperty("net.dns2", "1.0.0.1")
-                
-                Runtime.getRuntime().exec(arrayOf("setprop", "net.dns1", "1.1.1.1"))
-                Runtime.getRuntime().exec(arrayOf("setprop", "net.dns2", "1.0.0.1"))
-                LogUtil.d(TAG, "✅ System properties set")
-            } catch (e: Exception) {
-                LogUtil.w(TAG, "⚠️ Setprop failed")
-            }
-            
-            realmeBypassApplied = true
-            
-        } catch (e: Exception) {
-            LogUtil.e(TAG, "❌ Realme bypass failed: ${e.message}")
-        }
-    }
-    
-    /**
-     * Detect mobile gateway dari current network
-     */
-    private fun detectMobileGateway(): String {
+    private fun setupCgnatMethod(dnsServers: List<String>): Boolean {
         return try {
-            val interfaces = listOf("ccmni1", "ccmni0", "rmnet0", "rmnet1")
+            LogUtil.d(TAG, "🔧 Trying CGNAT method...")
             
-            for (iface in interfaces) {
-                try {
-                    Runtime.getRuntime().exec("ip addr show $iface")
-                        .inputStream.bufferedReader().use { reader ->
-                            val lines = reader.readText()
-                            if (lines.contains("state UP") || lines.contains("state UNKNOWN")) {
-                                Regex("inet\\s+(\\d+\\.\\d+\\.\\d+\\.\\d+)").find(lines)?.groupValues?.get(1)?.let { ip ->
-                                    val parts = ip.split(".")
-                                    if (parts.size == 4) {
-                                        val gateway = "${parts[0]}.${parts[1]}.${parts[2]}.1"
-                                        LogUtil.d(TAG, "Found interface $iface with IP: $ip -> Gateway: $gateway")
-                                        return gateway
-                                    }
-                                }
-                            }
-                        }
-                } catch (e: Exception) {
-                    // Interface tak wujud, try next
-                }
-            }
-            
-            "10.66.191.1"
-            
-        } catch (e: Exception) {
-            "10.66.191.1"
-        }
-    }
-    
-    /**
-     * 🔥 MODIFIED: VPN setup dengan Realme bypass
-     */
-    private fun setupVpn(dnsType: String): Boolean {
-        return try {
-            val dnsServers = getDnsServers(dnsType)
-            LogUtil.d(TAG, "Setting up VPN dengan DNS: $dnsServers")
-            
-            // 🔥 Apply bypass sebelum setup VPN
-            if (!realmeBypassApplied) {
-                applyRealmeBypassHacks()
-                // Tunggu 500ms secara sync
-                Thread.sleep(500)
-            }
+            mobileGateway = detectMobileGateway()
+            LogUtil.d(TAG, "Mobile gateway: $mobileGateway")
             
             vpnInterface?.close()
             
-            val mobileGateway = detectMobileGateway()
-            LogUtil.d(TAG, "Detected mobile gateway: $mobileGateway")
-            
             val builder = Builder()
-                .setSession("CB-DNS")
-                // 🔥 GANTI IP RANGE (Realme mungkin block 10.0.0.0/8)
-                .addAddress("192.168.69.2", 24)  // Guna range lain
+                .setSession("CB-DNS-FIX")
+                // 🔥 GUNA CGNAT RANGE (100.64.0.0/10)
+                .addAddress("100.64.0.2", 24)
                 .addRoute("0.0.0.0", 0)
-                .addRoute("192.168.69.0", 24)    // Route untuk VPN network
-                .setMtu(1400)
+                .addRoute("100.64.0.0", 10)     // Large CGNAT range
+                .addRoute(mobileGateway, 32)
+                .addRoute(splitToNetwork(mobileGateway), 24)
+                .setMtu(1280)                  // Kecil untuk stability
                 .setBlocking(true)
             
             // Add DNS
@@ -201,30 +119,11 @@ class VpnDnsService : VpnService() {
                 builder.addDnsServer(dns)
             }
             
-            // 🔥 TAMBAH: Allow IPv6 DNS jgak
-            dnsServers.filter { it.contains(':') }.forEach { dns ->
-                builder.addDnsServer(dns)
-            }
-            
-            // Add proper routes
-            if (mobileGateway.isNotEmpty()) {
-                val gatewayParts = mobileGateway.split(".")
-                if (gatewayParts.size == 4) {
-                    builder.addRoute(mobileGateway, 32)
-                    val network = "${gatewayParts[0]}.${gatewayParts[1]}.${gatewayParts[2]}.0"
-                    builder.addRoute(network, 24)
-                }
-            }
-            
-            // 🔥 TAMBAH: Route untuk common services
-            builder.addRoute("1.1.1.1", 32)
-            builder.addRoute("8.8.8.8", 32)
-            
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 builder.setMetered(false)
             }
             
-            // 🔥 TAMBAH: Set configure intent untuk stability
+            // 🔥 Configure intent untuk stability
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 val configureIntent = PendingIntent.getActivity(
                     this, 0,
@@ -237,171 +136,435 @@ class VpnDnsService : VpnService() {
             builder.establish()?.let { fd ->
                 vpnInterface = fd
                 
-                // 🔥 TAMBAH: Start DNS hijack sebagai backup
-                startDnsHijackBackup()
+                // 🔥 CRITICAL: Rebuild routing table selepas VPN up
+                rebuildRoutingTable()
                 
-                // Simple route update
-                coroutineScope.launch {
-                    delay(1000)
-                    try {
-                        Runtime.getRuntime().exec(arrayOf(
-                            "sh", "-c",
-                            "ip route replace default dev tun0 && ip route flush cache"
-                        ))
-                        LogUtil.d(TAG, "Simple route update done")
-                    } catch (e: Exception) {
-                        LogUtil.e(TAG, "Route update skipped")
-                    }
-                }
+                // Start DNS proxy sebagai backup
+                startDnsProxyBackup()
                 
                 isRunning.set(true)
-                LogUtil.d(TAG, "VPN ESTABLISHED with Realme bypass")
+                currentMethod = VpnMethod.CGNAT_FULL_ROUTE
+                LogUtil.d(TAG, "✅ CGNAT method SUCCESS")
                 true
             } ?: run {
-                LogUtil.e(TAG, "Failed to establish VPN")
+                LogUtil.e(TAG, "❌ CGNAT method failed")
                 false
             }
+            
         } catch (e: Exception) {
-            LogUtil.e(TAG, "Error: ${e.message}")
+            LogUtil.e(TAG, "CGNAT error: ${e.message}")
             false
         }
     }
     
     /**
-     * 🔥 NEW: DNS hijack backup untuk Realme
+     * 🔥 FALLBACK 1: Solution A - Routing hijack
      */
-    private fun startDnsHijackBackup() {
+    private fun setupRoutingHijackMethod(dnsServers: List<String>): Boolean {
+        return try {
+            LogUtil.d(TAG, "🔧 Trying Routing Hijack method...")
+            
+            val builder = Builder()
+                .setSession("CB-DNS-HIJACK")
+                .addAddress("192.168.69.2", 24)
+                .addRoute("0.0.0.0", 0)
+                .setMtu(1400)
+                .setBlocking(true)
+            
+            dnsServers.filter { it.contains('.') }.forEach { dns ->
+                builder.addDnsServer(dns)
+            }
+            
+            builder.establish()?.let { fd ->
+                vpnInterface = fd
+                
+                // 🔥 HIJACK ROUTING TABLE
+                hijackRoutingTable()
+                
+                startDnsProxyBackup()
+                isRunning.set(true)
+                currentMethod = VpnMethod.ROUTING_HIJACK
+                LogUtil.d(TAG, "✅ Routing Hijack SUCCESS")
+                true
+            } ?: false
+            
+        } catch (e: Exception) {
+            false
+        }
+    }
+    
+    /**
+     * 🔥 FALLBACK 2: Solution C - Bind to specific network
+     */
+    private fun setupNetworkBindMethod(dnsServers: List<String>): Boolean {
+        return try {
+            LogUtil.d(TAG, "🔧 Trying Network Bind method...")
+            
+            val builder = Builder()
+                .setSession("CB-DNS-BIND")
+                .addAddress("172.16.0.2", 24)
+                .addRoute("0.0.0.0", 0)
+                .setMtu(1400)
+                .setBlocking(true)
+            
+            dnsServers.forEach { dns ->
+                builder.addDnsServer(dns)
+            }
+            
+            // 🔥 BIND TO MOBILE NETWORK
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                val connectivityManager = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+                val networks = connectivityManager.allNetworks
+                
+                for (network in networks) {
+                    val caps = connectivityManager.getNetworkCapabilities(network)
+                    if (caps?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true) {
+                        try {
+                            val method = builder.javaClass.getDeclaredMethod(
+                                "setUnderlyingNetworks", 
+                                Array<Network>::class.java
+                            )
+                            method.invoke(builder, arrayOf(network))
+                            LogUtil.d(TAG, "✅ Bound to mobile network")
+                        } catch (e: Exception) {
+                            // Reflection failed
+                        }
+                        break
+                    }
+                }
+            }
+            
+            builder.establish()?.let { fd ->
+                vpnInterface = fd
+                rebuildRoutingTable()
+                isRunning.set(true)
+                currentMethod = VpnMethod.NETWORK_BIND
+                LogUtil.d(TAG, "✅ Network Bind SUCCESS")
+                true
+            } ?: false
+            
+        } catch (e: Exception) {
+            false
+        }
+    }
+    
+    /**
+     * 🔥 FALLBACK 3: Solution D - Deep hack
+     */
+    private fun setupDeepHackMethod(dnsServers: List<String>): Boolean {
+        return try {
+            LogUtil.d(TAG, "🔧 Trying Deep Hack method...")
+            
+            // Apply deep hacks first
+            applyDeepHacks()
+            
+            val builder = Builder()
+                .setSession("CB-DNS-DEEP")
+                .addAddress("10.1.1.2", 24)  // Different range
+                .addRoute("0.0.0.0", 0)
+                .setMtu(1500)
+                .setBlocking(true)
+            
+            dnsServers.take(2).forEach { dns ->
+                builder.addDnsServer(dns)
+            }
+            
+            builder.establish()?.let { fd ->
+                vpnInterface = fd
+                
+                // Deep route injection
+                deepRouteInject()
+                
+                isRunning.set(true)
+                currentMethod = VpnMethod.DEEP_HACK
+                LogUtil.d(TAG, "✅ Deep Hack SUCCESS")
+                true
+            } ?: false
+            
+        } catch (e: Exception) {
+            false
+        }
+    }
+    
+    /**
+     * 🔥 NUCLEAR OPTION: DNS-only mode with proxy
+     */
+    private fun setupDnsOnlyProxy(dnsServers: List<String>): Boolean {
+        return try {
+            LogUtil.d(TAG, "🔥 Trying DNS-Only Proxy (Nuclear option)...")
+            
+            // Start local DNS proxy dulu
+            if (!startDnsProxyServer()) {
+                return false
+            }
+            
+            val builder = Builder()
+                .setSession("CB-DNS-PROXY")
+                .addAddress("169.254.1.2", 24)  // Link-local
+                .addDnsServer("127.0.0.1")      // Point to our proxy
+                .addRoute("0.0.0.0", 0)
+                .setBlocking(true)
+            
+            builder.establish()?.let { fd ->
+                vpnInterface = fd
+                isRunning.set(true)
+                currentMethod = VpnMethod.DNS_ONLY_PROXY
+                LogUtil.d(TAG, "✅ DNS-Only Proxy SUCCESS")
+                true
+            } ?: false
+            
+        } catch (e: Exception) {
+            false
+        }
+    }
+    
+    /**
+     * 🔥 CRITICAL FUNCTION: Rebuild routing table (Solution E core)
+     */
+    private fun rebuildRoutingTable() {
+        coroutineScope.launch {
+            delay(800) // Biar VPN settle
+            
+            try {
+                val cmds = """
+                    # 1. DELETE REALME'S BROKEN ROUTES
+                    ip route del 10.0.0.0/8 dev ccmni1 2>/dev/null || true
+                    ip route del default dev ccmni1 2>/dev/null || true
+                    
+                    # 2. SET CCMNI1 METRIC TINGGI (999)
+                    ip route add 10.66.191.0/24 dev ccmni1 metric 999 2>/dev/null || true
+                    ip route add ${mobileGateway}/32 dev ccmni1 metric 998 2>/dev/null || true
+                    
+                    # 3. SET VPN AS DEFAULT (METRIC RENDAH)
+                    ip route add default dev tun0 metric 10 2>/dev/null || true
+                    ip route add 0.0.0.0/0 dev tun0 metric 20 2>/dev/null || true
+                    
+                    # 4. ADD SPECIFIC ROUTES KE VPN
+                    ip route add 100.64.0.0/10 dev tun0 metric 30 2>/dev/null || true
+                    ip route add ${splitToNetwork(mobileGateway)}/24 dev tun0 metric 40 2>/dev/null || true
+                    
+                    # 5. BLOCK TRAFFIC LEAK
+                    ip route add 1.1.1.1/32 dev tun0 metric 5 2>/dev/null || true
+                    ip route add 8.8.8.8/32 dev tun0 metric 5 2>/dev/null || true
+                    
+                    # 6. FLUSH CACHE
+                    ip route flush cache 2>/dev/null || true
+                    
+                    # 7. VERIFY
+                    echo "=== FINAL ROUTES ==="
+                    ip route show
+                """.trimIndent()
+                
+                Runtime.getRuntime().exec(arrayOf("sh", "-c", cmds))
+                LogUtil.d(TAG, "✅ Routing table rebuilt")
+                
+                // Log final routes
+                Runtime.getRuntime().exec("ip route show").inputStream.bufferedReader().use {
+                    LogUtil.d(TAG, "ROUTES:\n${it.readText()}")
+                }
+                
+            } catch (e: Exception) {
+                LogUtil.e(TAG, "❌ Rebuild failed: ${e.message}")
+            }
+        }
+    }
+    
+    /**
+     * Hijack routing table (Solution A)
+     */
+    private fun hijackRoutingTable() {
+        try {
+            val cmds = """
+                # Set ccmni1 metric tinggi
+                ip route change 10.0.0.0/8 dev ccmni1 metric 999
+                
+                # Force default ke tun0
+                ip route replace default dev tun0 metric 0
+                
+                # Lock
+                echo 1 > /proc/sys/net/ipv4/route/no_metric_reset 2>/dev/null || true
+            """
+            Runtime.getRuntime().exec(arrayOf("sh", "-c", cmds))
+        } catch (e: Exception) {
+            // Ignore
+        }
+    }
+    
+    /**
+     * Deep hack methods (Solution D)
+     */
+    private fun applyDeepHacks() {
+        try {
+            // Try to disable Realme's routing optimization
+            Runtime.getRuntime().exec("echo 0 > /proc/sys/net/ipv4/conf/ccmni1/rp_filter 2>/dev/null")
+            Runtime.getRuntime().exec("echo 1 > /proc/sys/net/ipv4/route/min_adv_mss 2>/dev/null")
+        } catch (e: Exception) {
+            // Ignore
+        }
+    }
+    
+    private fun deepRouteInject() {
+        try {
+            val routes = """
+                # Via proc interface
+                default dev tun0 metric 0
+                0.0.0.0/0 dev tun0 metric 10
+                10.0.0.0/8 dev ccmni1 metric 1000
+            """
+            Runtime.getRuntime().exec("echo '$routes' > /proc/net/route 2>/dev/null")
+        } catch (e: Exception) {
+            // Ignore
+        }
+    }
+    
+    /**
+     * DNS proxy backup
+     */
+    private fun startDnsProxyBackup() {
         coroutineScope.launch {
             try {
-                // Stop existing socket
-                dnsHijackSocket?.close()
-                
+                dnsProxySocket?.close()
                 val socket = DatagramSocket(5353)
-                dnsHijackSocket = socket
+                dnsProxySocket = socket
                 val buffer = ByteArray(512)
                 
                 while (isRunning.get()) {
-                    try {
-                        val packet = DatagramPacket(buffer, buffer.size)
-                        socket.receive(packet)
-                        
-                        // Forward ke Cloudflare
-                        val forwardSocket = DatagramSocket()
-                        forwardSocket.connect(InetAddress.getByName("1.1.1.1"), 53)
-                        forwardSocket.send(packet)
-                        
-                        val response = ByteArray(512)
-                        val responsePacket = DatagramPacket(response, response.size)
-                        forwardSocket.receive(responsePacket)
-                        
-                        // Send back
-                        socket.send(
-                            DatagramPacket(
-                                response, 
-                                response.size, 
-                                packet.address, 
-                                packet.port
-                            )
-                        )
-                        forwardSocket.close()
-                        
-                    } catch (e: Exception) {
-                        // Continue loop
-                    }
+                    val packet = DatagramPacket(buffer, buffer.size)
+                    socket.receive(packet)
+                    
+                    // Forward to Cloudflare
+                    val forwardSocket = DatagramSocket()
+                    forwardSocket.connect(InetAddress.getByName("1.1.1.1"), 53)
+                    forwardSocket.send(packet)
+                    
+                    val response = ByteArray(512)
+                    val responsePacket = DatagramPacket(response, response.size)
+                    forwardSocket.receive(responsePacket)
+                    
+                    socket.send(DatagramPacket(response, responsePacket.length, 
+                        packet.address, packet.port))
+                    forwardSocket.close()
                 }
+                socket.close()
             } catch (e: Exception) {
-                LogUtil.w(TAG, "DNS hijack failed: ${e.message}")
+                // Expected when stopping
             }
         }
     }
     
-    /**
-     * Force route update selepas VPN established
-     */
-    private fun forceRouteUpdate(gateway: String) {
-        coroutineScope.launch {
-            delay(1000)
-            
-            try {
-                val parts = gateway.split(".")
-                if (parts.size != 4) {
-                    LogUtil.e(TAG, "Invalid gateway format: $gateway")
-                    return@launch
+    private fun startDnsProxyServer(): Boolean {
+        return try {
+            Thread {
+                val server = DatagramSocket(53)
+                val buffer = ByteArray(512)
+                
+                while (isRunning.get()) {
+                    val packet = DatagramPacket(buffer, buffer.size)
+                    server.receive(packet)
+                    
+                    val forward = DatagramSocket()
+                    forward.connect(InetAddress.getByName("1.1.1.1"), 53)
+                    forward.send(packet)
+                    
+                    val response = ByteArray(512)
+                    val responsePacket = DatagramPacket(response, response.size)
+                    forward.receive(responsePacket)
+                    
+                    server.send(DatagramPacket(response, responsePacket.length,
+                        packet.address, packet.port))
+                    forward.close()
                 }
-                
-                val network = "${parts[0]}.${parts[1]}.${parts[2]}.0"
-                
-                var vpnInterfaceName = "tun0"
-                var mobileInterface = "ccmni1"
-                
+                server.close()
+            }.start()
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+    
+    /**
+     * Helper functions
+     */
+    private fun detectMobileGateway(): String {
+        return try {
+            val interfaces = listOf("ccmni1", "ccmni0", "rmnet0", "rmnet1")
+            for (iface in interfaces) {
                 try {
-                    Runtime.getRuntime().exec("ip link show")
-                        .inputStream.bufferedReader().use { reader ->
-                            val lines = reader.readText()
-                            if (lines.contains("tun1")) vpnInterfaceName = "tun1"
-                            if (lines.contains("ccmni0") && lines.contains("state UNKNOWN")) mobileInterface = "ccmni0"
+                    Runtime.getRuntime().exec("ip addr show $iface").inputStream
+                        .bufferedReader().use { reader ->
+                            val text = reader.readText()
+                            Regex("inet\\s+(\\d+\\.\\d+\\.\\d+\\.\\d+)").find(text)?.let { match ->
+                                val ip = match.groupValues[1]
+                                val parts = ip.split(".")
+                                if (parts.size == 4) {
+                                    return "${parts[0]}.${parts[1]}.${parts[2]}.1"
+                                }
+                            }
                         }
                 } catch (e: Exception) {
-                    // Use defaults
+                    continue
                 }
-                
-                val commands = arrayOf(
-                    "sh", "-c",
-                    """
-                    # Delete broken routes
-                    ip route del default dev $vpnInterfaceName 2>/dev/null || true
-                    ip route del default via 0.0.0.0 2>/dev/null || true
-                    
-                    # Add default route dengan gateway
-                    ip route add default via $gateway dev $vpnInterfaceName metric 10 2>/dev/null || true
-                    
-                    # Alternative route
-                    ip route add default dev $vpnInterfaceName metric 20 2>/dev/null || true
-                    
-                    # Mobile network routes
-                    ip route add $network/24 dev $mobileInterface metric 100 2>/dev/null || true
-                    ip route add $gateway/32 dev $mobileInterface metric 50 2>/dev/null || true
-                    
-                    # VPN local route
-                    ip route add 192.168.69.0/24 dev $vpnInterfaceName 2>/dev/null || true
-                    
-                    # DNS server routes
-                    ip route add 1.1.1.1/32 dev $vpnInterfaceName 2>/dev/null || true
-                    ip route add 8.8.8.8/32 dev $vpnInterfaceName 2>/dev/null || true
-                    
-                    # Flush cache
-                    ip route flush cache 2>/dev/null || true
-                    """
-                )
-                
-                Runtime.getRuntime().exec(commands)
-                LogUtil.d(TAG, "✅ Enhanced route update executed")
-                
-                Runtime.getRuntime().exec("ip route show")
-                    .inputStream.bufferedReader().use { reader ->
-                        val routes = reader.readText()
-                        LogUtil.d(TAG, "Final routing table:\n$routes")
-                    }
-                    
-            } catch (e: Exception) {
-                LogUtil.e(TAG, "❌ Route update failed: ${e.message}")
             }
+            "10.66.191.1"
+        } catch (e: Exception) {
+            "10.66.191.1"
         }
     }
     
+    private fun splitToNetwork(gateway: String): String {
+        val parts = gateway.split(".")
+        return if (parts.size == 4) "${parts[0]}.${parts[1]}.${parts[2]}.0" else "10.66.191.0"
+    }
+    
     /**
-     * 🔥 NEW: Check VPN traffic flow
+     * Main VPN setup dengan automatic fallback
      */
-    private fun checkVpnTrafficFlow(): Boolean {
+    private fun setupVpnWithFallback(dnsType: String): Boolean {
+        val dnsServers = getDnsServers(dnsType)
+        
+        val methods = listOf(
+            { setupCgnatMethod(dnsServers) },      // Main method
+            { setupRoutingHijackMethod(dnsServers) }, // Fallback 1
+            { setupNetworkBindMethod(dnsServers) },   // Fallback 2
+            { setupDeepHackMethod(dnsServers) },      // Fallback 3
+            { setupDnsOnlyProxy(dnsServers) }         // Nuclear option
+        )
+        
+        for ((index, method) in methods.withIndex()) {
+            LogUtil.d(TAG, "Attempting method ${index + 1}/${methods.size}")
+            
+            if (method()) {
+                // Verify connection
+                if (verifyVpnConnection()) {
+                    return true
+                } else {
+                    LogUtil.w(TAG, "Method $index passed but verification failed")
+                }
+            }
+            
+            // Cleanup sebelum try next method
+            vpnInterface?.close()
+            vpnInterface = null
+            Thread.sleep(1000)
+        }
+        
+        return false
+    }
+    
+    /**
+     * Verify VPN connection actually works
+     */
+    private fun verifyVpnConnection(): Boolean {
         return try {
-            val connectivityManager = getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+            // Check if VPN has internet capability
+            val connectivityManager = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
             val network = connectivityManager.activeNetwork
             val caps = connectivityManager.getNetworkCapabilities(network)
             
-            val hasVpn = caps?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN) == true
-            val hasInternet = caps?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+            val hasVpn = caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
+            val hasInternet = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
             
-            LogUtil.d(TAG, "VPN Check: VPN=$hasVpn, Internet=$hasInternet")
+            LogUtil.d(TAG, "Verification: VPN=$hasVpn, Internet=$hasInternet, Method=$currentMethod")
             
             hasVpn && hasInternet
         } catch (e: Exception) {
@@ -411,67 +574,60 @@ class VpnDnsService : VpnService() {
     
     private fun startVpnBackground(dnsType: String) {
         coroutineScope.launch {
-            // Check OVERLAY permission untuk Realme
+            // Check overlay permission
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 if (!Settings.canDrawOverlays(this@VpnDnsService)) {
-                    LogUtil.e(TAG, "No OVERLAY permission - Realme may kill service")
+                    LogUtil.w(TAG, "No overlay permission - Realme may kill service")
                 }
             }
             
-            val dnsServers = getDnsServers(dnsType)
-            
-            if (isRunning.get() && currentDns == dnsServers.first()) {
-                LogUtil.d(TAG, "VPN sudah running dengan DNS sama: $currentDns")
+            if (isRunning.get()) {
+                LogUtil.d(TAG, "VPN already running")
                 return@launch
             }
             
-            // Multiple retry untuk Realme
+            // Try dengan retry mechanism
             var success = false
-            var retryCount = 0
+            retryCount = 0
             
-            while (!success && retryCount < 3) {
-                LogUtil.d(TAG, "VPN setup attempt ${retryCount + 1}")
-                success = setupVpn(dnsType)
+            while (!success && retryCount < 2) {
+                retryCount++
+                LogUtil.d(TAG, "VPN setup attempt $retryCount")
+                
+                success = setupVpnWithFallback(dnsType)
                 
                 if (success) {
-                    // 🔥 CHECK traffic flow
-                    delay(2000)
-                    val trafficOk = checkVpnTrafficFlow()
-                    
-                    if (!trafficOk) {
-                        LogUtil.w(TAG, "VPN up but traffic not flowing, retrying...")
+                    // Double verification
+                    Thread.sleep(2000)
+                    if (!verifyVpnConnection()) {
+                        LogUtil.w(TAG, "Verification failed, retrying...")
                         success = false
                     }
                 }
                 
                 if (!success) {
-                    delay(1000L * (retryCount + 1))
-                    retryCount++
+                    Thread.sleep(2000L * retryCount)
                 }
             }
             
             if (success) {
-                // Acquire wake lock sebelum show notification
                 acquireWakeLock()
-                showNotification(dnsServers.first())
+                showNotification(currentDns)
                 
-                LogUtil.d(TAG, "✅ VPN started dengan DNS: $dnsServers")
+                LogUtil.d(TAG, "✅ VPN STARTED with method: $currentMethod")
                 
                 sendBroadcast(Intent("VPN_DNS_STATUS").apply {
                     putExtra("status", "RUNNING")
-                    putExtra("dns", dnsServers.first())
-                    putExtra("bypass", realmeBypassApplied)
+                    putExtra("dns", currentDns)
+                    putExtra("method", currentMethod.name)
                 })
             } else {
-                LogUtil.e(TAG, "❌ Failed to start VPN after $retryCount attempts")
+                LogUtil.e(TAG, "❌ ALL METHODS FAILED")
                 stopSelf()
             }
         }
     }
     
-    /**
-     * Acquire wake lock untuk prevent Realme kill service
-     */
     private fun acquireWakeLock() {
         try {
             val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -480,49 +636,40 @@ class VpnDnsService : VpnService() {
                 "CedokBooster:VPNLock"
             ).apply {
                 setReferenceCounted(false)
-                acquire(60 * 60 * 1000L) // 1 hour
-                LogUtil.d(TAG, "WakeLock acquired")
+                acquire(60 * 60 * 1000L)
             }
         } catch (e: Exception) {
-            LogUtil.e(TAG, "Failed to acquire WakeLock: ${e.message}")
+            // Ignore
         }
     }
     
-    /**
-     * Stop VPN dan cleanup
-     */
     private fun stopVpn() {
         coroutineScope.launch {
             try {
                 isRunning.set(false)
                 currentDns = "1.0.0.1"
-                realmeBypassApplied = false
                 
-                // Stop DNS hijack
-                dnsHijackSocket?.close()
-                dnsHijackSocket = null
+                // Cleanup sockets
+                dnsProxySocket?.close()
+                dnsProxySocket = null
                 
                 vpnInterface?.close()
                 vpnInterface = null
                 
                 // Release wake lock
                 wakeLock?.let {
-                    if (it.isHeld) {
-                        it.release()
-                        LogUtil.d(TAG, "WakeLock released")
-                    }
+                    if (it.isHeld) it.release()
                 }
                 
                 notificationManager?.cancel(NOTIFICATION_ID)
                 
                 sendBroadcast(Intent("VPN_DNS_STATUS").apply {
                     putExtra("status", "STOPPED")
-                    putExtra("dns", "1.0.0.1")
                 })
                 
-                LogUtil.d(TAG, "VPN stopped, DNS restored")
+                LogUtil.d(TAG, "VPN stopped")
             } catch (e: Exception) {
-                LogUtil.e(TAG, "Error stopping VPN: ${e.message}")
+                LogUtil.e(TAG, "Stop error: ${e.message}")
             } finally {
                 stopForeground(true)
                 stopSelf()
@@ -530,9 +677,6 @@ class VpnDnsService : VpnService() {
         }
     }
     
-    /**
-     * Show foreground notification dengan HIGH priority
-     */
     private fun showNotification(dnsServer: String) {
         notificationManager = getSystemService(NotificationManager::class.java)
         
@@ -559,7 +703,6 @@ class VpnDnsService : VpnService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         
-        // Stop action button
         val stopIntent = Intent(this, VpnDnsService::class.java).apply {
             action = ACTION_STOP_VPN
         }
@@ -568,11 +711,9 @@ class VpnDnsService : VpnService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         
-        val bypassStatus = if (realmeBypassApplied) "✅ Bypass ON" else "⚠️ Bypass OFF"
-        
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("🛡️ CedokBooster DNS Active")
-            .setContentText("DNS: $dnsServer | $bypassStatus")
+            .setContentText("DNS: $dnsServer | Method: $currentMethod")
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_MAX)
@@ -590,7 +731,6 @@ class VpnDnsService : VpnService() {
             .build()
         
         startForeground(NOTIFICATION_ID, notification)
-        LogUtil.d(TAG, "Foreground notification shown with MAX priority")
     }
     
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -599,15 +739,9 @@ class VpnDnsService : VpnService() {
         when (intent?.action) {
             ACTION_START_VPN -> {
                 val dnsType = intent.getStringExtra(EXTRA_DNS_TYPE) ?: "A"
-                LogUtil.d(TAG, "Starting VPN dengan DNS type: $dnsType")
                 startVpnBackground(dnsType)
             }
-            
-            ACTION_STOP_VPN -> {
-                LogUtil.d(TAG, "Stopping VPN")
-                stopVpn()
-            }
-            
+            ACTION_STOP_VPN -> stopVpn()
             else -> stopSelf()
         }
         
@@ -616,24 +750,14 @@ class VpnDnsService : VpnService() {
     
     override fun onDestroy() {
         LogUtil.d(TAG, "Service destroying...")
-        
-        // Cleanup wake lock
-        wakeLock?.let {
-            if (it.isHeld) {
-                it.release()
-                LogUtil.d(TAG, "WakeLock released in onDestroy")
-            }
-        }
-        
-        // Cleanup DNS hijack
-        dnsHijackSocket?.close()
-        
+        wakeLock?.let { if (it.isHeld) it.release() }
+        dnsProxySocket?.close()
         stopVpn()
         super.onDestroy()
     }
     
     override fun onRevoke() {
-        LogUtil.d(TAG, "VPN revoked by system/user")
+        LogUtil.d(TAG, "VPN revoked")
         stopVpn()
         super.onRevoke()
     }

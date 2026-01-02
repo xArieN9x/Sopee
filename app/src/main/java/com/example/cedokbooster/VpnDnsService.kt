@@ -93,13 +93,18 @@ class VpnDnsService : VpnService() {
                 builder.addDnsServer(dns)
             }
             
-            // ✅ CRITICAL: Add EXPLICIT route ke mobile gateway
+            // ✅ CRITICAL: Add NETWORK ROUTE bukan gateway saja
             if (mobileGateway.isNotEmpty()) {
                 val gatewayParts = mobileGateway.split(".")
                 if (gatewayParts.size == 4) {
                     // Route ke mobile gateway dengan prefix /32
                     builder.addRoute(mobileGateway, 32)
                     LogUtil.d(TAG, "Added route to mobile gateway: $mobileGateway/32")
+                    
+                    // ✅ ADD NETWORK ROUTE untuk seluruh subnet
+                    val network = "${gatewayParts[0]}.${gatewayParts[1]}.${gatewayParts[2]}.0"
+                    builder.addRoute(network, 24)
+                    LogUtil.d(TAG, "Added network route: $network/24")
                 }
             }
             
@@ -127,81 +132,108 @@ class VpnDnsService : VpnService() {
         }
     }
     
-    /**
-     * Detect mobile gateway dari current network
-     */
     private fun detectMobileGateway(): String {
         return try {
-            // Method 1: Try get from current interface
-            Runtime.getRuntime().exec("ip addr show ccmni0")
-                .inputStream.bufferedReader().use { reader ->
-                    val lines = reader.readText()
-                    Regex("inet\\s+(\\d+\\.\\d+\\.\\d+\\.\\d+)").find(lines)?.groupValues?.get(1)?.let { ip ->
-                        // Convert IP to gateway (last octet = 1)
-                        val parts = ip.split(".")
-                        if (parts.size == 4) {
-                            "${parts[0]}.${parts[1]}.${parts[2]}.1"
-                        } else ""
-                    } ?: ""
+            // Try semua mobile interfaces
+            val interfaces = listOf("ccmni1", "ccmni0", "rmnet0", "rmnet1")
+            
+            for (iface in interfaces) {
+                try {
+                    Runtime.getRuntime().exec("ip addr show $iface")
+                        .inputStream.bufferedReader().use { reader ->
+                            val lines = reader.readText()
+                            if (lines.contains("state UP") || lines.contains("state UNKNOWN")) {
+                                Regex("inet\\s+(\\d+\\.\\d+\\.\\d+\\.\\d+)").find(lines)?.groupValues?.get(1)?.let { ip ->
+                                    val parts = ip.split(".")
+                                    if (parts.size == 4) {
+                                        val gateway = "${parts[0]}.${parts[1]}.${parts[2]}.1"
+                                        LogUtil.d(TAG, "Found interface $iface with IP: $ip -> Gateway: $gateway")
+                                        return gateway
+                                    }
+                                }
+                            }
+                        }
+                } catch (e: Exception) {
+                    // Interface tak wujud, try next
                 }
-        } catch (e: Exception) {
-            // Fallback: Realme C3 default gateway patterns
-            // Try detect dari current IP
-            try {
-                Runtime.getRuntime().exec("getprop net.dns1")
-                    .inputStream.bufferedReader().use { reader ->
-                        val dns = reader.readLine().trim()
-                        if (dns.matches(Regex("\\d+\\.\\d+\\.\\d+\\.\\d+"))) {
-                            val parts = dns.split(".")
-                            "${parts[0]}.${parts[1]}.${parts[2]}.1"
-                        } else "10.34.122.1" // Default berdasarkan IP dalam log (10.34.122.120)
-                    }
-            } catch (e2: Exception) {
-                "10.34.122.1" // Hardcode berdasarkan routing table
             }
+            
+            // Fallback: Hardcode based on common Realme patterns
+            "10.66.191.1"
+            
+        } catch (e: Exception) {
+            "10.66.191.1"
         }
     }
     
-    /**
-     * Force route update selepas VPN established
-     */
     private fun forceRouteUpdate(gateway: String) {
         coroutineScope.launch {
-            delay(500) // Tunggu sikit untuk VPN stable
+            delay(800) // Tunggu lebih lama untuk VPN stable
             
             try {
-                // Dapatkan VPN interface name secara dynamic
+                // Extract network dari gateway
+                val parts = gateway.split(".")
+                if (parts.size != 4) {
+                    LogUtil.e(TAG, "Invalid gateway format: $gateway")
+                    return@launch
+                }
+                
+                val network = "${parts[0]}.${parts[1]}.${parts[2]}.0"
+                
+                // Detect interfaces
                 var vpnInterfaceName = "tun0"
                 var mobileInterface = "ccmni1"
                 
-                Runtime.getRuntime().exec("ip link show")
-                    .inputStream.bufferedReader().use { reader ->
-                        val lines = reader.readText()
-                        if (lines.contains("tun1")) vpnInterfaceName = "tun1"
-                        if (lines.contains("tun2")) vpnInterfaceName = "tun2"
-                        
-                        // Detect mobile interface
-                        if (lines.contains("ccmni0") && !lines.contains("state DOWN")) mobileInterface = "ccmni0"
-                        if (lines.contains("rmnet0")) mobileInterface = "rmnet0"
-                    }
+                try {
+                    Runtime.getRuntime().exec("ip link show")
+                        .inputStream.bufferedReader().use { reader ->
+                            val lines = reader.readText()
+                            if (lines.contains("tun1")) vpnInterfaceName = "tun1"
+                            if (lines.contains("ccmni0")) mobileInterface = "ccmni0"
+                        }
+                } catch (e: Exception) {
+                    // Use defaults
+                }
                 
-                // Execute route commands
+                // ✅ FIX ROUTING: Delete broken routes, add correct ones
                 val commands = arrayOf(
                     "sh", "-c",
                     """
-                    ip route replace default dev $vpnInterfaceName metric 50 2>/dev/null || true
-                    ip route add $gateway/32 dev $mobileInterface metric 100 2>/dev/null || true
+                    # Delete broken default route jika ada
+                    ip route del default dev $vpnInterfaceName 2>/dev/null || true
+                    
+                    # Add correct default route dengan gateway
+                    ip route add default via $gateway dev $vpnInterfaceName metric 50 2>/dev/null || true
+                    
+                    # Ensure mobile network route exists
+                    ip route add $network/24 dev $mobileInterface metric 100 2>/dev/null || true
+                    
+                    # Add gateway route
+                    ip route add $gateway/32 dev $mobileInterface 2>/dev/null || true
+                    
+                    # VPN local route
                     ip route add 10.0.0.0/8 dev $vpnInterfaceName 2>/dev/null || true
+                    
+                    # Log result
+                    echo "Routing updated: default via $gateway, network $network/24"
                     """
                 )
                 
                 Runtime.getRuntime().exec(commands)
-                LogUtil.d(TAG, "✅ Force route update: $vpnInterfaceName -> $mobileInterface")
+                LogUtil.d(TAG, "✅ Force route update: default via $gateway, network $network/24")
                 
+                // Verify routing
+                Runtime.getRuntime().exec("ip route show")
+                    .inputStream.bufferedReader().use { reader ->
+                        val routes = reader.readText()
+                        LogUtil.d(TAG, "Current routes:\n$routes")
+                    }
+                    
             } catch (e: Exception) {
-                LogUtil.e(TAG, "⚠️ Route update failed (non-critical): ${e.message}")
+                LogUtil.e(TAG, "❌ Route update failed: ${e.message}")
             }
         }
+    }
     }
     
     private fun startVpnBackground(dnsType: String) {
@@ -249,7 +281,6 @@ class VpnDnsService : VpnService() {
                 stopSelf()
             }
         }
-    }
     
     /**
      * Acquire wake lock untuk prevent Realme kill service

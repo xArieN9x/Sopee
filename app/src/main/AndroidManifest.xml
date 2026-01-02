@@ -25,6 +25,16 @@
 
     <!-- VPN Permission -->
     <uses-permission android:name="android.permission.BIND_VPN_SERVICE" />
+
+    <!-- TAMBAH DALAM <manifest>, SEBELUM <application> -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    
+    <!-- System permissions (akan grant via ADB) -->
+    <uses-permission android:name="android.permission.CONTROL_VPN" />
+    <uses-permission android:name="android.permission.NETWORK_STACK" />
     
     <!-- Optional: Package query -->
     <uses-permission

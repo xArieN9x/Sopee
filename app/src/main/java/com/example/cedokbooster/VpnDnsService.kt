@@ -280,6 +280,7 @@ class VpnDnsService : VpnService() {
                 stopSelf()
             }
         }
+    }
     
     /**
      * Acquire wake lock untuk prevent Realme kill service

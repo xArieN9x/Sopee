@@ -786,6 +786,7 @@ class VpnDnsService : VpnService() {
                 LogUtil.e(TAG, "❌ ALL BATTLE METHODS FAILED")
                 stopSelf()
             }
+            Unit
         }
     }
     

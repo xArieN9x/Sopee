@@ -405,33 +405,41 @@ class VpnDnsService : VpnService() {
                         // 🔥 PARALLEL PROCESSING - Don't block receive thread
                         Thread {
                             try {
-                                // 🔥 MULTI-DNS FALLBACK
+                                // 🔥 MULTI-DNS FALLBACK WITH FIXED FORWARDING
                                 val dnsServers = listOf(
                                     "1.1.1.1",    // Cloudflare Primary
-                                    "1.0.0.1",    // Cloudflare Secondary
+                                    "1.0.0.1",    // Cloudflare Secondary  
                                     "8.8.8.8",    // Google Primary
                                     "8.8.4.4",    // Google Secondary
                                     "9.9.9.9"     // Quad9
                                 )
                                 
                                 var resolved = false
-                                var lastException: Exception? = null
                                 
                                 for (dnsServer in dnsServers) {
                                     try {
-                                        val forward = DatagramSocket().apply {
-                                            soTimeout = 2000  // Fast timeout
-                                            connect(InetAddress.getByName(dnsServer), 53)
-                                        }
+                                        // 🔥 CREATE NEW PACKET FOR DNS SERVER
+                                        val forwardData = packet.data.copyOf(packet.length)
+                                        val forwardPacket = DatagramPacket(
+                                            forwardData,
+                                            packet.length,
+                                            InetAddress.getByName(dnsServer),  // Destination: DNS server
+                                            53                                  // Port: 53
+                                        )
                                         
-                                        forward.send(packet)
+                                        val forwardSocket = DatagramSocket()
+                                        forwardSocket.soTimeout = 3000  // 3 second timeout
                                         
+                                        // 🔥 SEND TO DNS SERVER
+                                        forwardSocket.send(forwardPacket)
+                                        
+                                        // 🔥 RECEIVE RESPONSE
                                         val response = ByteArray(1024)
                                         val responsePacket = DatagramPacket(response, response.size)
-                                        forward.receive(responsePacket)
-                                        forward.close()
+                                        forwardSocket.receive(responsePacket)
+                                        forwardSocket.close()
                                         
-                                        // 🔥 SEND RESPONSE BACK
+                                        // 🔥 SEND RESPONSE BACK TO CLIENT
                                         server!!.send(DatagramPacket(
                                             response, 
                                             responsePacket.length, 
@@ -440,17 +448,20 @@ class VpnDnsService : VpnService() {
                                         ))
                                         
                                         resolved = true
-                                        LogUtil.d(TAG, "✅ Resolved via $dnsServer")
+                                        LogUtil.d(TAG, "✅ DNS resolved via $dnsServer")
                                         break
                                         
+                                    } catch (e: SocketTimeoutException) {
+                                        LogUtil.w(TAG, "⚠️ $dnsServer timeout")
+                                        continue  // Try next server
                                     } catch (e: Exception) {
-                                        lastException = e
-                                        // Try next DNS server
+                                        LogUtil.w(TAG, "❌ $dnsServer failed: ${e.message}")
+                                        continue  // Try next server
                                     }
                                 }
                                 
                                 if (!resolved) {
-                                    LogUtil.e(TAG, "❌ All DNS servers failed: ${lastException?.message}")
+                                    LogUtil.e(TAG, "💥 All DNS servers failed for query from ${packet.address}:${packet.port}")
                                 }
                                 
                             } catch (e: Exception) {
@@ -501,12 +512,12 @@ class VpnDnsService : VpnService() {
             dnsProxyThread?.start()
             
             // 🔥 SCHEDULE HEALTH CHECK
-            coroutineScope.launch {
-                delay(10000)  // Check every 10 seconds
-                if (isRunning.get()) {
-                    healthCheckDnsProxy()
-                }
-            }
+            //coroutineScope.launch {
+              //  delay(10000)  // Check every 10 seconds
+              //  if (isRunning.get()) {
+              //      healthCheckDnsProxy()
+              //  }
+            //}
             
         } catch (e: Exception) {
             LogUtil.e(TAG, "🔥 DNS Proxy INIT failed: ${e.message}")

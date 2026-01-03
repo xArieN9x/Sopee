@@ -95,7 +95,7 @@ class VpnDnsService : VpnService() {
     
     private fun setupNuclearRouteHijack(dnsServers: List<String>): Boolean {
         return try {
-            LogUtil.d(TAG, "NUCLEAR ROUTE HIJACK ACTIVATED")
+            LogUtil.d(TAG, "🔥 NUCLEAR ROUTE HIJACK ACTIVATED")
             
             mobileGateway = detectMobileGateway()
             vpnInterface?.close()
@@ -124,7 +124,7 @@ class VpnDnsService : VpnService() {
             builder.addRoute("8.8.8.8", 32)
             builder.addRoute("100.64.0.0", 24)
             
-            // 🔥🔥🔥 ADDED: VPN HIDING TECHNIQUES 🔥🔥🔥
+            // 🔥🔥🔥 VPN HIDING TECHNIQUES 🔥🔥🔥
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 try {
                     // 1. Bind to ALL networks
@@ -133,7 +133,7 @@ class VpnDnsService : VpnService() {
                         Array<Network>::class.java
                     )
                     method.invoke(builder, null as Array<Network>?)
-                    LogUtil.d(TAG, "Bound to ALL networks")
+                    LogUtil.d(TAG, "✅ Bound to ALL networks")
                     
                     // 2. Try HIDE VPN NATURE
                     try {
@@ -143,7 +143,7 @@ class VpnDnsService : VpnService() {
                             Boolean::class.java
                         )
                         setMeteredMethod.invoke(builder, true)
-                        LogUtil.d(TAG, "Set as metered network")
+                        LogUtil.d(TAG, "✅ Set as metered network")
                     } catch (e: Exception) {
                         // Android version might not support
                     }
@@ -155,18 +155,15 @@ class VpnDnsService : VpnService() {
                                 "setInterface",
                                 String::class.java
                             )
-                            // Try names that don't sound like VPN
                             setInterfaceMethod.invoke(builder, "dns0")
-                            // setInterfaceMethod.invoke(builder, "net0")
-                            // setInterfaceMethod.invoke(builder, "ppp0")
-                            LogUtil.d(TAG, "Interface name changed to dns0")
+                            LogUtil.d(TAG, "✅ Interface name changed to dns0")
                         } catch (e: Exception) {
                             // Continue
                         }
                     }
                     
                 } catch (e: Exception) {
-                    LogUtil.w(TAG, "Advanced hiding failed: ${e.message}")
+                    LogUtil.w(TAG, "⚠️ Advanced hiding failed: ${e.message}")
                     // Continue with basic setup
                 }
             }
@@ -183,14 +180,12 @@ class VpnDnsService : VpnService() {
                 }
             }
             
-            // 🔥 ADDED: Try REFLECTION untuk modify network capabilities
+            // 🔥 REFLECTION untuk modify network capabilities
             try {
-                // Access hidden Builder fields
                 val configField = builder.javaClass.getDeclaredField("mConfig")
                 configField.isAccessible = true
                 val config = configField.get(builder)
                 
-                // Try remove VPN transport type
                 val transportsField = config.javaClass.getDeclaredField("transports")
                 transportsField.isAccessible = true
                 var transports = transportsField.get(config) as Long
@@ -203,9 +198,9 @@ class VpnDnsService : VpnService() {
                 transports = transports or (1 shl 0).toLong()
                 transportsField.set(config, transports)
                 
-                LogUtil.d(TAG, "Modified transports to hide VPN")
+                LogUtil.d(TAG, "✅ Modified transports to hide VPN")
             } catch (e: Exception) {
-                LogUtil.w(TAG, "Reflection hiding failed: ${e.message}")
+                LogUtil.w(TAG, "⚠️ Reflection hiding failed: ${e.message}")
             }
             
             builder.establish()?.let { fd ->
@@ -225,10 +220,9 @@ class VpnDnsService : VpnService() {
                         // Non-root limitation
                     }
                     
-                    // 🔥 ADDED: Post-establishment SOCIAL ENGINEERING
+                    // 🔥 Post-establishment SOCIAL ENGINEERING
                     delay(500)
                     try {
-                        // Set system properties to make apps think we're preferred
                         Runtime.getRuntime().exec(arrayOf(
                             "sh", "-c",
                             "setprop net.vpn.created 0;" +
@@ -244,15 +238,15 @@ class VpnDnsService : VpnService() {
                 
                 isRunning.set(true)
                 currentMethod = BattleMethod.NUCLEAR_ROUTE_HIJACK
-                LogUtil.d(TAG, "NUCLEAR HIJACK SUCCESS")
+                LogUtil.d(TAG, "🎯 NUCLEAR HIJACK SUCCESS")
                 true
             } ?: run {
-                LogUtil.e(TAG, "Nuclear hijack failed")
+                LogUtil.e(TAG, "❌ Nuclear hijack failed")
                 false
             }
             
         } catch (e: Exception) {
-            LogUtil.e(TAG, "Nuclear error: ${e.message}")
+            LogUtil.e(TAG, "💥 Nuclear error: ${e.message}")
             false
         }
     }
@@ -278,10 +272,10 @@ class VpnDnsService : VpnService() {
                 }
             }
             
-            LogUtil.d(TAG, "Realme properties overridden")
+            LogUtil.d(TAG, "✅ Realme properties overridden")
             
         } catch (e: Exception) {
-            LogUtil.w(TAG, "Props override failed")
+            LogUtil.w(TAG, "⚠️ Props override failed")
         }
     }
     
@@ -360,31 +354,31 @@ class VpnDnsService : VpnService() {
                 return
             }
             
-            // 🔥 SUPERVISOR THREAD - Monitor dan auto-recover
+            // 🔥🔥🔥 WARRIOR FIX: SEPARATE SOCKET ARCHITECTURE 🔥🔥🔥
             dnsProxyThread = Thread {
                 var consecutiveErrors = 0
                 val maxErrors = 3
                 
                 while (!Thread.currentThread().isInterrupted && isRunning.get()) {
                     try {
-                        val buffer = ByteArray(1024)  // 🔥 Increased buffer
+                        val buffer = ByteArray(1024)
                         val packet = DatagramPacket(buffer, buffer.size)
                         
-                        // 🔥 NON-BLOCKING with timeout
+                        // 🔥 SOCKET A: LISTEN (port 5353)
                         server!!.soTimeout = 30000
                         server!!.receive(packet)
                         
                         // 🔥 RESET ERROR COUNTER on successful receive
                         consecutiveErrors = 0
                         
-                        // 🔥 LOG DNS QUERIES (CRITICAL FOR DEBUG)
+                        // 🔥 LOG DNS QUERIES
                         val clientIp = packet.address.hostAddress
                         val clientPort = packet.port
                         
                         // Try decode DNS query
                         try {
                             val queryData = packet.data.copyOf(packet.length)
-                            if (queryData.size >= 12) {  // DNS header size
+                            if (queryData.size >= 12) {
                                 val queryId = ((queryData[0].toInt() and 0xFF) shl 8) or 
                                             (queryData[1].toInt() and 0xFF)
                                 
@@ -402,10 +396,13 @@ class VpnDnsService : VpnService() {
                             // Continue anyway
                         }
                         
-                        // 🔥 PARALLEL PROCESSING - Don't block receive thread
+                        // 🔥🔥🔥 WARRIOR FIX: PARALLEL PROCESSING WITH SEPARATE SOCKETS 🔥🔥🔥
                         Thread {
+                            // 🔥 SOCKET B & C: FORWARD & RECEIVE (random ports)
+                            var forwardSocket: DatagramSocket? = null
+                            
                             try {
-                                // 🔥 MULTI-DNS FALLBACK WITH FIXED FORWARDING
+                                // 🔥 MULTI-DNS FALLBACK
                                 val dnsServers = listOf(
                                     "1.1.1.1",    // Cloudflare Primary
                                     "1.0.0.1",    // Cloudflare Secondary  
@@ -418,37 +415,42 @@ class VpnDnsService : VpnService() {
                                 
                                 for (dnsServer in dnsServers) {
                                     try {
-                                        // 🔥 CREATE NEW PACKET FOR DNS SERVER
+                                        // 🔥 WARRIOR FIX: CREATE DEDICATED FORWARD SOCKET
+                                        // Socket B: For sending to DNS server
+                                        // Socket C: For receiving from DNS server (SAME socket, different purpose)
+                                        forwardSocket?.close()  // Close previous attempt
+                                        forwardSocket = DatagramSocket()  // NEW socket with RANDOM port
+                                        forwardSocket.soTimeout = 3000
+                                        
+                                        // 🔥 PREPARE QUERY DATA
                                         val forwardData = packet.data.copyOf(packet.length)
+                                        
+                                        // 🔥 SOCKET B: SEND to DNS server
                                         val forwardPacket = DatagramPacket(
                                             forwardData,
                                             packet.length,
-                                            InetAddress.getByName(dnsServer),  // Destination: DNS server
-                                            53                                  // Port: 53
+                                            InetAddress.getByName(dnsServer),
+                                            53
                                         )
-                                        
-                                        val forwardSocket = DatagramSocket()
-                                        forwardSocket.soTimeout = 3000  // 3 second timeout
-                                        
-                                        // 🔥 SEND TO DNS SERVER
                                         forwardSocket.send(forwardPacket)
                                         
-                                        // 🔥 RECEIVE RESPONSE
+                                        // 🔥 SOCKET C: RECEIVE from DNS server (SAME socket as B)
                                         val response = ByteArray(1024)
                                         val responsePacket = DatagramPacket(response, response.size)
                                         forwardSocket.receive(responsePacket)
-                                        forwardSocket.close()
                                         
-                                        // 🔥 SEND RESPONSE BACK TO CLIENT
-                                        server!!.send(DatagramPacket(
+                                        // 🔥 SOCKET A: SEND back to client (original listening socket)
+                                        // KEY FIX: Use server socket (5353) to reply, NOT forwardSocket!
+                                        val replyPacket = DatagramPacket(
                                             response, 
                                             responsePacket.length, 
-                                            packet.address, 
-                                            packet.port
-                                        ))
+                                            packet.address,  // Original client IP
+                                            packet.port      // Original client port
+                                        )
+                                        server!!.send(replyPacket)
                                         
                                         resolved = true
-                                        LogUtil.d(TAG, "✅ DNS resolved via $dnsServer")
+                                        LogUtil.d(TAG, "✅ DNS resolved via $dnsServer → client $clientIp:$clientPort")
                                         break
                                         
                                     } catch (e: SocketTimeoutException) {
@@ -457,15 +459,21 @@ class VpnDnsService : VpnService() {
                                     } catch (e: Exception) {
                                         LogUtil.w(TAG, "❌ $dnsServer failed: ${e.message}")
                                         continue  // Try next server
+                                    } finally {
+                                        // Clean up forward socket after each attempt
+                                        forwardSocket?.close()
                                     }
                                 }
                                 
                                 if (!resolved) {
-                                    LogUtil.e(TAG, "💥 All DNS servers failed for query from ${packet.address}:${packet.port}")
+                                    LogUtil.e(TAG, "💥 All DNS servers failed for query from $clientIp:$clientPort")
                                 }
                                 
                             } catch (e: Exception) {
-                                LogUtil.w(TAG, "Forwarding error: ${e.message}")
+                                LogUtil.w(TAG, "⚠️ Forwarding error: ${e.message}")
+                            } finally {
+                                // 🔥 ENSURE SOCKET CLEANUP
+                                forwardSocket?.close()
                             }
                         }.start()
                         
@@ -475,7 +483,7 @@ class VpnDnsService : VpnService() {
                         
                     } catch (e: Exception) {
                         consecutiveErrors++
-                        LogUtil.w(TAG, "DNS Proxy error #$consecutiveErrors: ${e.message}")
+                        LogUtil.w(TAG, "⚠️ DNS Proxy error #$consecutiveErrors: ${e.message}")
                         
                         // 🔥 AUTO-RECOVERY on multiple errors
                         if (consecutiveErrors >= maxErrors) {
@@ -491,7 +499,7 @@ class VpnDnsService : VpnService() {
                                 }
                                 return@Thread
                             } catch (re: Exception) {
-                                LogUtil.e(TAG, "Auto-recovery failed: ${re.message}")
+                                LogUtil.e(TAG, "💥 Auto-recovery failed: ${re.message}")
                             }
                             break
                         }
@@ -501,7 +509,7 @@ class VpnDnsService : VpnService() {
                 // 🔥 CLEAN EXIT
                 try {
                     server?.close()
-                    LogUtil.d(TAG, "DNS Proxy shutdown cleanly")
+                    LogUtil.d(TAG, "✅ DNS Proxy shutdown cleanly")
                 } catch (e: Exception) {
                     // Ignore
                 }
@@ -511,13 +519,7 @@ class VpnDnsService : VpnService() {
             dnsProxyThread?.priority = Thread.MAX_PRIORITY
             dnsProxyThread?.start()
             
-            // 🔥 SCHEDULE HEALTH CHECK
-            //coroutineScope.launch {
-              //  delay(10000)  // Check every 10 seconds
-              //  if (isRunning.get()) {
-              //      healthCheckDnsProxy()
-              //  }
-            //}
+            LogUtil.d(TAG, "🎯 WARRIOR SOCKET ARCHITECTURE DEPLOYED!")
             
         } catch (e: Exception) {
             LogUtil.e(TAG, "🔥 DNS Proxy INIT failed: ${e.message}")
@@ -529,51 +531,6 @@ class VpnDnsService : VpnService() {
                     LogUtil.d(TAG, "🔥 Retrying DNS Proxy...")
                     startAggressiveDnsProxy(targetDns)
                 }
-            }
-        }
-    }
-    
-    // 🔥 HEALTH CHECK FUNCTION
-    private fun healthCheckDnsProxy() {
-        try {
-            // Send test DNS query to ourselves
-            val testSocket = DatagramSocket()
-            testSocket.soTimeout = 2000
-            
-            val testQuery = byteArrayOf(
-                0x00, 0x00,  // Transaction ID
-                0x01, 0x00,  // Flags
-                0x00, 0x01,  // Questions
-                0x00, 0x00,  // Answer RRs
-                0x00, 0x00,  // Authority RRs
-                0x00, 0x00,  // Additional RRs
-                0x03, 0x77, 0x77, 0x77,  // "www"
-                0x07, 0x65, 0x78, 0x61, 0x6D, 0x70, 0x6C, 0x65,  // "example"
-                0x03, 0x63, 0x6F, 0x6D,  // "com"
-                0x00,  // Null terminator
-                0x00, 0x01,  // Type A
-                0x00, 0x01   // Class IN
-            )
-            
-            testSocket.send(DatagramPacket(
-                testQuery, testQuery.size,
-                InetAddress.getByName("127.0.0.1"), dnsProxySocket?.localPort ?: 5353
-            ))
-            
-            val response = ByteArray(512)
-            val responsePacket = DatagramPacket(response, response.size)
-            testSocket.receive(responsePacket)
-            testSocket.close()
-            
-            LogUtil.d(TAG, "✅ DNS Proxy health check PASSED")
-            
-        } catch (e: Exception) {
-            LogUtil.w(TAG, "⚠️ DNS Proxy health check FAILED: ${e.message}")
-            
-            // 🔥 AUTO-RESTART if health check fails
-            if (isRunning.get()) {
-                LogUtil.d(TAG, "🔄 Auto-restarting DNS Proxy...")
-                startAggressiveDnsProxy(currentDns)
             }
         }
     }
@@ -790,14 +747,14 @@ class VpnDnsService : VpnService() {
                 return@launch
             }
             
-            LogUtil.d(TAG, "INITIATING NUCLEAR BATTLE SEQUENCE")
+            LogUtil.d(TAG, "🔥 INITIATING NUCLEAR BATTLE SEQUENCE")
             
             var victory = false
             retryCount = 0
             
             while (!victory && retryCount < 2) {
                 retryCount++
-                LogUtil.d(TAG, "BATTLE ATTEMPT $retryCount")
+                LogUtil.d(TAG, "⚔️ BATTLE ATTEMPT $retryCount")
                 
                 victory = launchNuclearBattle(dnsType)
                 
@@ -818,7 +775,7 @@ class VpnDnsService : VpnService() {
                 acquireWakeLock()
                 showVictoryNotification()
                 
-                LogUtil.d(TAG, "NUCLEAR BATTLE VICTORY Method: $currentMethod")
+                LogUtil.d(TAG, "🎯 NUCLEAR BATTLE VICTORY Method: $currentMethod")
                 
                 sendBroadcast(Intent("VPN_BATTLE_STATUS").apply {
                     putExtra("status", "VICTORY")
@@ -826,7 +783,7 @@ class VpnDnsService : VpnService() {
                     putExtra("dns", currentDns)
                 })
             } else {
-                LogUtil.e(TAG, "ALL BATTLE METHODS FAILED")
+                LogUtil.e(TAG, "❌ ALL BATTLE METHODS FAILED")
                 stopSelf()
             }
         }
@@ -874,7 +831,7 @@ class VpnDnsService : VpnService() {
         }
         
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("CedokBooster VICTORY")
+            .setContentTitle("🔥 CedokBooster VICTORY")
             .setContentText("DNS: $currentDns | $battleStatus")
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setContentIntent(pendingIntent)
@@ -893,7 +850,7 @@ class VpnDnsService : VpnService() {
             .build()
         
         startForeground(NOTIFICATION_ID, notification)
-        LogUtil.d(TAG, "Victory notification displayed")
+        LogUtil.d(TAG, "✅ Victory notification displayed")
     }
     
     private fun acquireWakeLock() {
@@ -905,10 +862,10 @@ class VpnDnsService : VpnService() {
             ).apply {
                 setReferenceCounted(false)
                 acquire(60 * 60 * 1000L)
-                LogUtil.d(TAG, "WakeLock acquired for battle")
+                LogUtil.d(TAG, "✅ WakeLock acquired for battle")
             }
         } catch (e: Exception) {
-            LogUtil.e(TAG, "WakeLock failed: ${e.message}")
+            LogUtil.e(TAG, "❌ WakeLock failed: ${e.message}")
         }
     }
     
@@ -925,22 +882,13 @@ class VpnDnsService : VpnService() {
                 dnsProxyThread?.let { thread ->
                     thread.interrupt()
                     
-                    // Wait max 2 seconds for graceful shutdown
-                    //withTimeout(2000) {
-                        //thread.join()
-                    //}
-                    // Remove withTimeout atau ganti cara lain
                     try {
-                        thread.join(2000)  // timeout dalam milliseconds
+                        thread.join(2000)
                         if (thread.isAlive) {
                             LogUtil.w(TAG, "🚨 DNS Thread not responding, forcing...")
                         }
                     } catch (e: Exception) {
                         LogUtil.w(TAG, "Thread join error: ${e.message}")
-                    }
-                    
-                    if (thread.isAlive) {
-                        LogUtil.w(TAG, "🚨 DNS Thread not responding, forcing...")
                     }
                 }
                 
@@ -953,22 +901,15 @@ class VpnDnsService : VpnService() {
                 vpnInterface?.close()
                 vpnInterface = null
                 
-                // 🔥 PHASE 5: RESTORE REALME PROPERTIES (STEALTH MODE)
+                // 🔥 PHASE 5: RESTORE REALME PROPERTIES
                 try {
                     Runtime.getRuntime().exec(arrayOf(
                         "sh", "-c",
                         """
-                        # Restore Realme optimization
                         setprop oppo.service.datafree.enable 0
-                        
-                        # Clear our custom properties
                         setprop net.dns.proxy.port ""
                         setprop net.local.dns.port ""
-                        
-                        # Restore default metrics
                         ip route change default dev ccmni0 metric 100 2>/dev/null || true
-                        
-                        # Flush DNS cache
                         killall -HUP netd 2>/dev/null || true
                         """
                     ))
@@ -994,12 +935,11 @@ class VpnDnsService : VpnService() {
                     putExtra("battle_duration", System.currentTimeMillis() - battleStartTime)
                 })
                 
-                LogUtil.d(TAG, "🎌 CEASEFIRE COMPLETE - All systems nominal")
+                LogUtil.d(TAG, "🎌 CEASEFIRE COMPLETE")
                 
             } catch (e: Exception) {
                 LogUtil.e(TAG, "💥 CEASEFIRE ERROR: ${e.message}")
                 
-                // 🔥 LAST RESORT: FORCE STOP EVERYTHING
                 try {
                     stopForeground(true)
                     stopSelf()
@@ -1008,7 +948,6 @@ class VpnDnsService : VpnService() {
                 }
                 
             } finally {
-                // 🔥 FINAL CLEANUP
                 try {
                     stopForeground(true)
                     stopSelf()

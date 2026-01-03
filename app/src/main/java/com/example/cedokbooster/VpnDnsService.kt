@@ -226,7 +226,7 @@ class VpnDnsService : VpnService() {
                         // Set system properties to make apps think we're preferred
                         Runtime.getRuntime().exec(arrayOf(
                             "sh", "-c",
-                            "setprop net.vpn.created 0;" +  # Hide VPN creation
+                            "setprop net.vpn.created 0;" +
                             "setprop net.dns1 1.1.1.1;" +
                             "setprop net.dns2 1.0.0.1"
                         ))

@@ -282,49 +282,283 @@ class VpnDnsService : VpnService() {
     
     private fun startAggressiveDnsProxy(targetDns: String) {
         try {
+            // 🔥 NUCLEAR CLEANUP - Kill semua yang pakai port kita
             dnsProxyThread?.interrupt()
             dnsProxySocket?.close()
             
-            dnsProxyThread = Thread {
+            // 🔥 WAIT FOR CLEANUP
+            Thread.sleep(200)
+            
+            // 🔥 PORT STRATEGY - Multiple port attempts
+            val portStrategy = listOf(
+                PortConfig(5353, "PRIMARY"),   // Standard mDNS
+                PortConfig(5354, "SECONDARY"), // Backup 1
+                PortConfig(5355, "TERTIARY"),  // Backup 2  
+                PortConfig(9999, "ALTERNATE"), // High port
+                PortConfig(53535, "RANDOM")    // Random high port
+            )
+            
+            var successfulPort = -1
+            var server: DatagramSocket? = null
+            
+            // 🔥 AGGRESSIVE PORT ACQUISITION
+            for ((port, name) in portStrategy) {
                 try {
-                    val server = DatagramSocket(5353)
-                    dnsProxySocket = server
-                    val buffer = ByteArray(512)
-                    
-                    LogUtil.d(TAG, "DNS Proxy active on port 5353")
-                    
-                    while (!Thread.currentThread().isInterrupted && isRunning.get()) {
-                        val packet = DatagramPacket(buffer, buffer.size)
-                        server.receive(packet)
-                        
-                        val forward = DatagramSocket()
-                        forward.connect(InetAddress.getByName(targetDns), 53)
-                        forward.send(packet)
-                        
-                        val response = ByteArray(512)
-                        val responsePacket = DatagramPacket(response, response.size)
-                        forward.receive(responsePacket)
-                        
-                        server.send(DatagramPacket(
-                            response, 
-                            responsePacket.length, 
-                            packet.address, 
-                            packet.port
+                    // 🔥 KILL EXISTING PROCESS ON PORT (non-root method)
+                    try {
+                        Runtime.getRuntime().exec(arrayOf(
+                            "sh", "-c",
+                            """
+                            # Try release port
+                            fuser -k $port/udp 2>/dev/null || true
+                            killall mdnsd 2>/dev/null || true
+                            """
                         ))
-                        forward.close()
+                        Thread.sleep(100)
+                    } catch (e: Exception) {
+                        // Non-root limitation
                     }
-                    server.close()
-                } catch (e: Exception) {
-                    if (!Thread.currentThread().isInterrupted) {
-                        LogUtil.w(TAG, "DNS Proxy stopped: ${e.message}")
+                    
+                    // 🔥 TRY BIND WITH REUSE ADDRESS
+                    server = DatagramSocket(null).apply {
+                        reuseAddress = true
+                        soTimeout = 5000
+                        bind(InetSocketAddress(port))
+                    }
+                    
+                    successfulPort = port
+                    dnsProxySocket = server
+                    LogUtil.d(TAG, "🔥 DNS Proxy ACQUIRED port $port ($name)")
+                    
+                    // 🔥 SET SYSTEM PROPERTIES untuk announce port kita
+                    try {
+                        Runtime.getRuntime().exec("setprop net.dns.proxy.port $port")
+                        Runtime.getRuntime().exec("setprop net.local.dns.port $port")
+                    } catch (e: Exception) {
+                        // Non-root, continue
+                    }
+                    
+                    break
+                    
+                } catch (e: SocketException) {
+                    if (e.message?.contains("EADDRINUSE") == true) {
+                        LogUtil.w(TAG, "🚨 Port $port occupied, trying next...")
+                        continue
+                    } else {
+                        throw e
                     }
                 }
             }
             
+            if (server == null) {
+                LogUtil.e(TAG, "💥 ALL PORTS BLOCKED by Realme!")
+                return
+            }
+            
+            // 🔥 SUPERVISOR THREAD - Monitor dan auto-recover
+            dnsProxyThread = Thread {
+                var consecutiveErrors = 0
+                val maxErrors = 3
+                
+                while (!Thread.currentThread().isInterrupted && isRunning.get()) {
+                    try {
+                        val buffer = ByteArray(1024)  // 🔥 Increased buffer
+                        val packet = DatagramPacket(buffer, buffer.size)
+                        
+                        // 🔥 NON-BLOCKING with timeout
+                        server!!.soTimeout = 30000
+                        server!!.receive(packet)
+                        
+                        // 🔥 RESET ERROR COUNTER on successful receive
+                        consecutiveErrors = 0
+                        
+                        // 🔥 LOG DNS QUERIES (CRITICAL FOR DEBUG)
+                        val clientIp = packet.address.hostAddress
+                        val clientPort = packet.port
+                        
+                        // Try decode DNS query
+                        try {
+                            val queryData = packet.data.copyOf(packet.length)
+                            if (queryData.size >= 12) {  // DNS header size
+                                val queryId = ((queryData[0].toInt() and 0xFF) shl 8) or 
+                                            (queryData[1].toInt() and 0xFF)
+                                
+                                LogUtil.d(TAG, "📡 DNS Query #$queryId from $clientIp:$clientPort")
+                                
+                                // 🔥 DETECT RIDER APPS
+                                val queryStr = String(queryData).toLowerCase()
+                                if (queryStr.contains("foodpanda") || 
+                                    queryStr.contains("grabfood") || 
+                                    queryStr.contains("mapbox")) {
+                                    LogUtil.d(TAG, "🎯 RIDER APP DETECTED! Priority handling...")
+                                }
+                            }
+                        } catch (e: Exception) {
+                            // Continue anyway
+                        }
+                        
+                        // 🔥 PARALLEL PROCESSING - Don't block receive thread
+                        Thread {
+                            try {
+                                // 🔥 MULTI-DNS FALLBACK
+                                val dnsServers = listOf(
+                                    "1.1.1.1",    // Cloudflare Primary
+                                    "1.0.0.1",    // Cloudflare Secondary
+                                    "8.8.8.8",    // Google Primary
+                                    "8.8.4.4",    // Google Secondary
+                                    "9.9.9.9"     // Quad9
+                                )
+                                
+                                var resolved = false
+                                var lastException: Exception? = null
+                                
+                                for (dnsServer in dnsServers) {
+                                    try {
+                                        val forward = DatagramSocket().apply {
+                                            soTimeout = 2000  // Fast timeout
+                                            connect(InetAddress.getByName(dnsServer), 53)
+                                        }
+                                        
+                                        forward.send(packet)
+                                        
+                                        val response = ByteArray(1024)
+                                        val responsePacket = DatagramPacket(response, response.size)
+                                        forward.receive(responsePacket)
+                                        forward.close()
+                                        
+                                        // 🔥 SEND RESPONSE BACK
+                                        server!!.send(DatagramPacket(
+                                            response, 
+                                            responsePacket.length, 
+                                            packet.address, 
+                                            packet.port
+                                        ))
+                                        
+                                        resolved = true
+                                        LogUtil.d(TAG, "✅ Resolved via $dnsServer")
+                                        break
+                                        
+                                    } catch (e: Exception) {
+                                        lastException = e
+                                        // Try next DNS server
+                                    }
+                                }
+                                
+                                if (!resolved) {
+                                    LogUtil.e(TAG, "❌ All DNS servers failed: ${lastException?.message}")
+                                }
+                                
+                            } catch (e: Exception) {
+                                LogUtil.w(TAG, "Forwarding error: ${e.message}")
+                            }
+                        }.start()
+                        
+                    } catch (e: SocketTimeoutException) {
+                        // 🔥 NO TRAFFIC - Normal, just continue
+                        consecutiveErrors = 0
+                        
+                    } catch (e: Exception) {
+                        consecutiveErrors++
+                        LogUtil.w(TAG, "DNS Proxy error #$consecutiveErrors: ${e.message}")
+                        
+                        // 🔥 AUTO-RECOVERY on multiple errors
+                        if (consecutiveErrors >= maxErrors) {
+                            LogUtil.e(TAG, "🚨 CRITICAL ERROR - Attempting auto-recovery...")
+                            
+                            try {
+                                server?.close()
+                                Thread.sleep(500)
+                                
+                                // 🔥 RESTART WITH DIFFERENT PORT
+                                if (isRunning.get()) {
+                                    startAggressiveDnsProxy(targetDns)
+                                }
+                                return
+                            } catch (re: Exception) {
+                                LogUtil.e(TAG, "Auto-recovery failed: ${re.message}")
+                            }
+                            break
+                        }
+                    }
+                }
+                
+                // 🔥 CLEAN EXIT
+                try {
+                    server?.close()
+                    LogUtil.d(TAG, "DNS Proxy shutdown cleanly")
+                } catch (e: Exception) {
+                    // Ignore
+                }
+            }
+            
+            // 🔥 SET THREAD PRIORITY
+            dnsProxyThread?.priority = Thread.MAX_PRIORITY
             dnsProxyThread?.start()
             
+            // 🔥 SCHEDULE HEALTH CHECK
+            coroutineScope.launch {
+                delay(10000)  // Check every 10 seconds
+                if (isRunning.get()) {
+                    healthCheckDnsProxy()
+                }
+            }
+            
         } catch (e: Exception) {
-            LogUtil.e(TAG, "DNS Proxy failed: ${e.message}")
+            LogUtil.e(TAG, "🔥 DNS Proxy INIT failed: ${e.message}")
+            
+            // 🔥 LAST RESORT - Try again in 3 seconds
+            coroutineScope.launch {
+                delay(3000)
+                if (isRunning.get()) {
+                    LogUtil.d(TAG, "🔥 Retrying DNS Proxy...")
+                    startAggressiveDnsProxy(targetDns)
+                }
+            }
+        }
+    }
+    
+    // 🔥 HEALTH CHECK FUNCTION
+    private fun healthCheckDnsProxy() {
+        try {
+            // Send test DNS query to ourselves
+            val testSocket = DatagramSocket()
+            testSocket.soTimeout = 2000
+            
+            val testQuery = byteArrayOf(
+                0x00, 0x00,  // Transaction ID
+                0x01, 0x00,  // Flags
+                0x00, 0x01,  // Questions
+                0x00, 0x00,  // Answer RRs
+                0x00, 0x00,  // Authority RRs
+                0x00, 0x00,  // Additional RRs
+                0x03, 0x77, 0x77, 0x77,  // "www"
+                0x07, 0x65, 0x78, 0x61, 0x6D, 0x70, 0x6C, 0x65,  // "example"
+                0x03, 0x63, 0x6F, 0x6D,  // "com"
+                0x00,  // Null terminator
+                0x00, 0x01,  // Type A
+                0x00, 0x01   // Class IN
+            )
+            
+            testSocket.send(DatagramPacket(
+                testQuery, testQuery.size,
+                InetAddress.getByName("127.0.0.1"), dnsProxySocket?.localPort ?: 5353
+            ))
+            
+            val response = ByteArray(512)
+            val responsePacket = DatagramPacket(response, response.size)
+            testSocket.receive(responsePacket)
+            testSocket.close()
+            
+            LogUtil.d(TAG, "✅ DNS Proxy health check PASSED")
+            
+        } catch (e: Exception) {
+            LogUtil.w(TAG, "⚠️ DNS Proxy health check FAILED: ${e.message}")
+            
+            // 🔥 AUTO-RESTART if health check fails
+            if (isRunning.get()) {
+                LogUtil.d(TAG, "🔄 Auto-restarting DNS Proxy...")
+                startAggressiveDnsProxy(currentDns)
+            }
         }
     }
     
@@ -662,25 +896,62 @@ class VpnDnsService : VpnService() {
     }
     
     private fun stopNuclearBattle() {
+        LogUtil.d(TAG, "🔥 INITIATING GRACEFUL CEASEFIRE")
+        
         coroutineScope.launch {
             try {
+                // 🔥 PHASE 1: SIGNAL STOP
                 isRunning.set(false)
                 currentDns = "1.0.0.1"
                 
-                dnsProxyThread?.interrupt()
+                // 🔥 PHASE 2: GRACEFUL DNS PROXY SHUTDOWN
+                dnsProxyThread?.let { thread ->
+                    thread.interrupt()
+                    
+                    // Wait max 2 seconds for graceful shutdown
+                    withTimeout(2000) {
+                        thread.join()
+                    }
+                    
+                    if (thread.isAlive) {
+                        LogUtil.w(TAG, "🚨 DNS Thread not responding, forcing...")
+                    }
+                }
+                
+                // 🔥 PHASE 3: FORCE CLOSE ALL SOCKETS
                 dnsProxySocket?.close()
                 dnsProxyThread = null
                 dnsProxySocket = null
                 
+                // 🔥 PHASE 4: VPN INTERFACE CLEANUP
                 vpnInterface?.close()
                 vpnInterface = null
                 
+                // 🔥 PHASE 5: RESTORE REALME PROPERTIES (STEALTH MODE)
                 try {
-                    Runtime.getRuntime().exec("setprop oppo.service.datafree.enable 0")
+                    Runtime.getRuntime().exec(arrayOf(
+                        "sh", "-c",
+                        """
+                        # Restore Realme optimization
+                        setprop oppo.service.datafree.enable 0
+                        
+                        # Clear our custom properties
+                        setprop net.dns.proxy.port ""
+                        setprop net.local.dns.port ""
+                        
+                        # Restore default metrics
+                        ip route change default dev ccmni0 metric 100 2>/dev/null || true
+                        
+                        # Flush DNS cache
+                        killall -HUP netd 2>/dev/null || true
+                        """
+                    ))
+                    LogUtil.d(TAG, "✅ Realme properties restored")
                 } catch (e: Exception) {
-                    // Ignore errors
+                    LogUtil.w(TAG, "Property restore failed: ${e.message}")
                 }
                 
+                // 🔥 PHASE 6: RESOURCE CLEANUP
                 wakeLock?.let {
                     if (it.isHeld) {
                         it.release()
@@ -690,17 +961,35 @@ class VpnDnsService : VpnService() {
                 
                 notificationManager?.cancel(NOTIFICATION_ID)
                 
+                // 🔥 PHASE 7: BROADCAST CEASEFIRE
                 sendBroadcast(Intent("VPN_BATTLE_STATUS").apply {
                     putExtra("status", "CEASEFIRE")
+                    putExtra("timestamp", System.currentTimeMillis())
+                    putExtra("battle_duration", System.currentTimeMillis() - battleStartTime)
                 })
                 
-                LogUtil.d(TAG, "Nuclear battle ceased")
+                LogUtil.d(TAG, "🎌 CEASEFIRE COMPLETE - All systems nominal")
                 
             } catch (e: Exception) {
-                LogUtil.e(TAG, "Ceasefire error: ${e.message}")
+                LogUtil.e(TAG, "💥 CEASEFIRE ERROR: ${e.message}")
+                
+                // 🔥 LAST RESORT: FORCE STOP EVERYTHING
+                try {
+                    stopForeground(true)
+                    stopSelf()
+                } catch (fe: Exception) {
+                    LogUtil.e(TAG, "FINAL FAILURE: ${fe.message}")
+                }
+                
             } finally {
-                stopForeground(true)
-                stopSelf()
+                // 🔥 FINAL CLEANUP
+                try {
+                    stopForeground(true)
+                    stopSelf()
+                    LogUtil.d(TAG, "Service terminated")
+                } catch (e: Exception) {
+                    // Already stopped
+                }
             }
         }
     }

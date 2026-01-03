@@ -663,6 +663,9 @@ class VpnDnsService : VpnService() {
             
             if (hasVpn) {
                 testDnsResolution()
+                Unit
+            } else {
+                Unit
             }
             
             LogUtil.d(TAG, "Verification: VPN=$hasVpn, Method=$currentMethod")
@@ -770,6 +773,8 @@ class VpnDnsService : VpnService() {
                 
                 if (!victory) {
                     delay(3000L * retryCount)
+                } else {
+                    Unit
                 }
             }
             
@@ -926,6 +931,8 @@ class VpnDnsService : VpnService() {
                     if (it.isHeld) {
                         it.release()
                         LogUtil.d(TAG, "WakeLock released")
+                    } else {
+                        Unit
                     }
                 }
                 
@@ -985,7 +992,7 @@ class VpnDnsService : VpnService() {
     
     override fun onDestroy() {
         LogUtil.d(TAG, "Service destroying")
-        wakeLock?.let { if (it.isHeld) it.release() }
+        wakeLock?.let { if (it.isHeld) it.release() else Unit }
         dnsProxyThread?.interrupt()
         dnsProxySocket?.close()
         stopNuclearBattle()

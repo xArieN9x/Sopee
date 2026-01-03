@@ -119,16 +119,50 @@ class VpnDnsService : VpnService() {
             builder.addRoute("8.8.8.8", 32)
             builder.addRoute("100.64.0.0", 24)
             
+            // 🔥🔥🔥 ADDED: VPN HIDING TECHNIQUES 🔥🔥🔥
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 try {
+                    // 1. Bind to ALL networks
                     val method = builder.javaClass.getDeclaredMethod(
                         "setUnderlyingNetworks", 
                         Array<Network>::class.java
                     )
                     method.invoke(builder, null as Array<Network>?)
                     LogUtil.d(TAG, "Bound to ALL networks")
+                    
+                    // 2. Try HIDE VPN NATURE
+                    try {
+                        // Method A: Set as metered (like cellular)
+                        val setMeteredMethod = builder.javaClass.getDeclaredMethod(
+                            "setMetered",
+                            Boolean::class.java
+                        )
+                        setMeteredMethod.invoke(builder, true)
+                        LogUtil.d(TAG, "Set as metered network")
+                    } catch (e: Exception) {
+                        // Android version might not support
+                    }
+                    
+                    // 3. Try set interface name bukan "tun0"
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        try {
+                            val setInterfaceMethod = builder.javaClass.getDeclaredMethod(
+                                "setInterface",
+                                String::class.java
+                            )
+                            // Try names that don't sound like VPN
+                            setInterfaceMethod.invoke(builder, "dns0")
+                            // setInterfaceMethod.invoke(builder, "net0")
+                            // setInterfaceMethod.invoke(builder, "ppp0")
+                            LogUtil.d(TAG, "Interface name changed to dns0")
+                        } catch (e: Exception) {
+                            // Continue
+                        }
+                    }
+                    
                 } catch (e: Exception) {
-                    // Continue
+                    LogUtil.w(TAG, "Advanced hiding failed: ${e.message}")
+                    // Continue with basic setup
                 }
             }
             
@@ -144,6 +178,31 @@ class VpnDnsService : VpnService() {
                 }
             }
             
+            // 🔥 ADDED: Try REFLECTION untuk modify network capabilities
+            try {
+                // Access hidden Builder fields
+                val configField = builder.javaClass.getDeclaredField("mConfig")
+                configField.isAccessible = true
+                val config = configField.get(builder)
+                
+                // Try remove VPN transport type
+                val transportsField = config.javaClass.getDeclaredField("transports")
+                transportsField.isAccessible = true
+                var transports = transportsField.get(config) as Long
+                
+                // Remove VPN bit (1 << 4 = 16 for VPN)
+                transports = transports and (1 shl 4).toLong().inv()
+                transportsField.set(config, transports)
+                
+                // Add Cellular bit (1 << 0 = 1 for CELLULAR)
+                transports = transports or (1 shl 0).toLong()
+                transportsField.set(config, transports)
+                
+                LogUtil.d(TAG, "Modified transports to hide VPN")
+            } catch (e: Exception) {
+                LogUtil.w(TAG, "Reflection hiding failed: ${e.message}")
+            }
+            
             builder.establish()?.let { fd ->
                 vpnInterface = fd
                 
@@ -156,6 +215,20 @@ class VpnDnsService : VpnService() {
                             "ip route replace default dev tun0 metric 50 2>/dev/null || true;" +
                             "ip route flush cache 2>/dev/null || true;" +
                             "echo 0 > /proc/sys/net/ipv4/conf/ccmni1/rp_filter 2>/dev/null || true"
+                        ))
+                    } catch (e: Exception) {
+                        // Non-root limitation
+                    }
+                    
+                    // 🔥 ADDED: Post-establishment SOCIAL ENGINEERING
+                    delay(500)
+                    try {
+                        // Set system properties to make apps think we're preferred
+                        Runtime.getRuntime().exec(arrayOf(
+                            "sh", "-c",
+                            "setprop net.vpn.created 0;" +  # Hide VPN creation
+                            "setprop net.dns1 1.1.1.1;" +
+                            "setprop net.dns2 1.0.0.1"
                         ))
                     } catch (e: Exception) {
                         // Non-root limitation

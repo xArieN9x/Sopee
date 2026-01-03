@@ -763,6 +763,8 @@ class VpnDnsService : VpnService() {
                     if (!verifyNuclearVictory()) {
                         LogUtil.w(TAG, "Victory verification failed, re-engaging")
                         victory = false
+                    } else {
+                        Unit
                     }
                 }
                 

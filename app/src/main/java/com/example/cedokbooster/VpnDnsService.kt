@@ -25,6 +25,10 @@ import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.util.concurrent.atomic.AtomicBoolean
+import java.net.InetSocketAddress
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import kotlinx.coroutines.withTimeout
 
 class VpnDnsService : VpnService() {
     
@@ -39,6 +43,7 @@ class VpnDnsService : VpnService() {
         
         private var isRunning = AtomicBoolean(false)
         private var currentDns = "1.0.0.1"
+        private var battleStartTime = 0L
         
         fun startVpn(context: Context, dnsType: String) {
             val intent = Intent(context, VpnDnsService::class.java).apply {
@@ -291,11 +296,11 @@ class VpnDnsService : VpnService() {
             
             // 🔥 PORT STRATEGY - Multiple port attempts
             val portStrategy = listOf(
-                PortConfig(5353, "PRIMARY"),   // Standard mDNS
-                PortConfig(5354, "SECONDARY"), // Backup 1
-                PortConfig(5355, "TERTIARY"),  // Backup 2  
-                PortConfig(9999, "ALTERNATE"), // High port
-                PortConfig(53535, "RANDOM")    // Random high port
+                Pair(5353, "PRIMARY"),
+                Pair(5354, "SECONDARY"), 
+                Pair(5355, "TERTIARY"),
+                Pair(9999, "ALTERNATE"),
+                Pair(53535, "RANDOM")
             )
             
             var successfulPort = -1
@@ -473,7 +478,7 @@ class VpnDnsService : VpnService() {
                                 if (isRunning.get()) {
                                     startAggressiveDnsProxy(targetDns)
                                 }
-                                return
+                                return@Thread
                             } catch (re: Exception) {
                                 LogUtil.e(TAG, "Auto-recovery failed: ${re.message}")
                             }
@@ -768,6 +773,7 @@ class VpnDnsService : VpnService() {
     
     private fun startNuclearBattle(dnsType: String) {
         coroutineScope.launch {
+            battleStartTime = System.currentTimeMillis() 
             if (isRunning.get()) {
                 LogUtil.d(TAG, "Battle already in progress")
                 return@launch
@@ -909,8 +915,17 @@ class VpnDnsService : VpnService() {
                     thread.interrupt()
                     
                     // Wait max 2 seconds for graceful shutdown
-                    withTimeout(2000) {
-                        thread.join()
+                    //withTimeout(2000) {
+                        //thread.join()
+                    //}
+                    // Remove withTimeout atau ganti cara lain
+                    try {
+                        thread.join(2000)  // timeout dalam milliseconds
+                        if (thread.isAlive) {
+                            LogUtil.w(TAG, "🚨 DNS Thread not responding, forcing...")
+                        }
+                    } catch (e: Exception) {
+                        LogUtil.w(TAG, "Thread join error: ${e.message}")
                     }
                     
                     if (thread.isAlive) {

@@ -898,6 +898,7 @@ class VpnDnsService : VpnService() {
                     } catch (e: Exception) {
                         LogUtil.w(TAG, "Thread join error: ${e.message}")
                     }
+                    Unit  // ← ADD THIS!
                 }
                 
                 // 🔥 PHASE 3: FORCE CLOSE ALL SOCKETS

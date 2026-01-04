@@ -129,17 +129,24 @@ class VpnDnsService : VpnService() {
                 .addAddress("100.64.0.2", 24)
                 .setMtu(1280)
                 .setBlocking(false)
+                .allowBypass(false)
             
             dnsServers.forEach { dns ->
                 builder.addDnsServer(dns)
             }
             
-            // 🔥 REALME WORKAROUND: Specific routes only, NO default in builder
+            // 🔥 HIJACK ALL DNS + DEFAULT ROUTE TRICK
+            builder.addRoute("203.82.91.14", 32)  // Telco DNS
+            builder.addRoute("203.82.91.30", 32)  // Telco DNS
             builder.addRoute("1.1.1.1", 32)
             builder.addRoute("1.0.0.1", 32)
             builder.addRoute("8.8.8.8", 32)
             builder.addRoute("8.8.4.4", 32)
             builder.addRoute("9.9.9.9", 32)
+            
+            // 🔥 TWO-HALVES DEFAULT ROUTE (stealth!)
+            builder.addRoute("0.0.0.0", 1)      // 0-127.x.x.x
+            builder.addRoute("128.0.0.0", 1)    // 128-255.x.x.x
             
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 try {

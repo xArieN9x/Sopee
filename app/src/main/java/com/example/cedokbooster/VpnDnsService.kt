@@ -155,6 +155,12 @@ class VpnDnsService : VpnService() {
             // 0.0.0.0/1 + 128.0.0.0/1 = semua IP di dunia
             builder.addRoute("0.0.0.0", 1)      // 0-127.255.255.255
             builder.addRoute("128.0.0.0", 1)    // 128-255.255.255.255
+
+            // 🔥🔥🔥 NUCLEAR TRICK: HIJACK DEFAULT ROUTE DENGAN METRIC TINGGI
+            // Realme tak boleh delete 0.0.0.0/0, tapi kita boleh override dengan metric tinggi
+            // Kernel akan pilih route dengan metric terendah
+            
+            builder.addRoute("0.0.0.0", 0)  // ← ADD INI JUGA!
             
             // 🔥 ROUTE KE DNS TELCO MELALUI VPN (INTERCEPT)
             builder.addRoute("203.82.91.14", 32)
@@ -203,7 +209,31 @@ class VpnDnsService : VpnService() {
                 // 🔥 ANDROID 10 TRICK 4: BIND PROCESS TO VPN
                 coroutineScope.launch {
                     delay(800)
+
+                    val ifaceName = getVpnInterfaceName()
+
+                    // 🔥 METRIC WAR: VPN LOW METRIC, CELLULAR HIGH METRIC
+                    try {
+                        // VPN routes with LOW metric (10)
+                        Runtime.getRuntime().exec("ip route add 0.0.0.0/1 dev $ifaceName metric 10")
+                        Runtime.getRuntime().exec("ip route add 128.0.0.0/1 dev $ifaceName metric 10")
+                        
+                        // Try to change cellular route to HIGH metric (100)
+                        Runtime.getRuntime().exec("ip route change default dev ccmni0 metric 100")
+                        
+                        LogUtil.d(TAG, "🔥 METRIC WAR INITIATED: VPN(10) vs Cellular(100)")
+                    } catch (e: Exception) {
+                        LogUtil.w(TAG, "⚠️ Metric war failed (non-root limitation)")
+                    }
                     
+                    // 🔥 ROUTE FLUSH CACHE - FORCE KERNEL RE-EVALUATE
+                    try {
+                        Runtime.getRuntime().exec("ip route flush cache")
+                        LogUtil.d(TAG, "✅ Route cache flushed")
+                    } catch (e: Exception) {
+                        // Continue
+                    }
+
                     try {
                         val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
                         val allNetworks = cm.allNetworks

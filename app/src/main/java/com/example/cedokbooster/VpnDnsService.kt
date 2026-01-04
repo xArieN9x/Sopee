@@ -98,22 +98,17 @@ class VpnDnsService : VpnService() {
             val process = Runtime.getRuntime().exec("ip addr show")
             val output = process.inputStream.bufferedReader().readText()
             
-            // Find tun interface yang UP
-            val lines = output.split("\n")
-            for (i in lines.indices) {
-                val line = lines[i]
-                if (line.contains("tun") && line.contains("UP")) {
-                    // Extract interface name (e.g., "tun2:")
-                    val parts = line.split(":")
-                    if (parts.isNotEmpty()) {
-                        val name = parts[0].trim().split(" ").last()
-                        LogUtil.d(TAG, "🔥 Found VPN interface: $name")
-                        return name
-                    }
-                }
+            val regex = Regex("""(\d+):\s+(tun\d+):\s+<[^>]*UP[^>]*>""")
+            val match = regex.find(output)
+            
+            if (match != null) {
+                val ifaceName = match.groupValues[2]
+                LogUtil.d(TAG, "🔥 Found VPN interface: $ifaceName")
+                return ifaceName
             }
             
-            "tun0" // fallback
+            LogUtil.w(TAG, "⚠️ No UP tun interface, trying tun0")
+            "tun0"
         } catch (e: Exception) {
             LogUtil.w(TAG, "⚠️ Failed to detect interface: ${e.message}")
             "tun0"

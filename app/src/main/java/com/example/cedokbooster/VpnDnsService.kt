@@ -169,6 +169,25 @@ class VpnDnsService : VpnService() {
             // 🔥 ROUTE KE PUBLIC DNS MELALUI VPN (JIC)
             builder.addRoute("8.8.8.8", 32)
             builder.addRoute("8.8.4.4", 32)
+
+            // 🔥🔥🔥 NUCLEAR TRICK: ROUTE DECEPTION
+            // Realme mungkin filter routes berdasarkan prefix length
+            // Kita cuba pelbagai format:
+            // Split routes menjadi lebih kecil (bypass filter)
+            //    0.0.0.0/8, 8.0.0.0/8, 16.0.0.0/8, ..., 248.0.0.0/8
+            for (i in 0..31) {
+                val network = (i * 8).toString() + ".0.0.0"
+                builder.addRoute(network, 8)  // /8 routes
+            }
+            
+            // 3. Route ke POPULAR SERVICES (Realme mungkin allow)
+            builder.addRoute("1.0.0.0", 8)      // Cloudflare
+            builder.addRoute("8.0.0.0", 8)      // Google
+            builder.addRoute("13.0.0.0", 8)     // AWS
+            builder.addRoute("34.0.0.0", 8)     // Google Cloud
+            builder.addRoute("52.0.0.0", 8)     // Amazon
+            builder.addRoute("104.0.0.0", 8)    // Fastly
+            builder.addRoute("172.0.0.0", 8)    // Private? Try anyway
             
             // 🔥 ANDROID 10 TRICK 3: CLAIM CELLULAR IDENTITY (API 23+)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -242,6 +261,41 @@ class VpnDnsService : VpnService() {
                         LogUtil.d(TAG, "🔥 PACKET FORWARDING ATTEMPTED")
                     } catch (e: Exception) {
                         LogUtil.w(TAG, "⚠️ Packet forwarding failed (expected for non-root)")
+                    }
+
+                    // 🔥 EMERGENCY: LOCAL TRAFFIC INTERCEPT
+                    if (!checkRoutesApplied()) {
+                        LogUtil.e(TAG, "🚨 REALME BLOCKED OUR ROUTES! Activating emergency mode...")
+                        activateEmergencyTrafficCapture()
+                    }
+                    
+                    private fun checkRoutesApplied(): Boolean {
+                        return try {
+                            val process = Runtime.getRuntime().exec("ip route show")
+                            val output = process.inputStream.bufferedReader().readText()
+                            
+                            // Check jika ada routes ke internet melalui tun0
+                            output.contains("0.0.0.0/.*dev tun0") || 
+                            output.contains("0.0.0.0/1 dev tun0") ||
+                            output.contains("128.0.0.0/1 dev tun0")
+                        } catch (e: Exception) {
+                            false
+                        }
+                    }
+                    
+                    private fun activateEmergencyTrafficCapture() {
+                        // 🔥 STRATEGY: CAPTURE LOCAL TRAFFIC & FORWARD
+                        // 1. Apps → local proxy (127.0.0.1:8080)
+                        // 2. Proxy forward melalui VPN socket
+                        // 3. Bypass kernel routing sepenuhnya
+                        
+                        LogUtil.d(TAG, "🔥 EMERGENCY TRAFFIC CAPTURE ACTIVATED")
+                        
+                        // Start local HTTP proxy
+                        startLocalHttpProxy(8080)
+                        
+                        // Notify apps untuk guna proxy
+                        broadcastProxySettings("127.0.0.1", 8080)
                     }
                     
                     // 🔥 PHASE 3: ROUTE FLUSH CACHE - FORCE KERNEL RE-EVALUATE

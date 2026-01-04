@@ -206,57 +206,53 @@ class VpnDnsService : VpnService() {
             if (fd != null) {
                 vpnInterface = fd
                 
-                // 🔥 ANDROID 10 TRICK 4: BIND PROCESS TO VPN
+                // 🔥 ANDROID 10 TRICK 4: KERNEL CONDITIONING
                 coroutineScope.launch {
                     delay(800)
-
-                    // TAPI kita set metric untuk VPN ROUTES RENDAH (10), cellular metric tinggi (100)
-                    // Dalam coroutineScope.launch, cuba inject:
+            
+                    // 🔥 GET INTERFACE NAME
+                    val ifaceName = getVpnInterfaceName()
+                    
+                    // 🔥 PHASE 1: METRIC WAR (VPN LOW METRIC, CELLULAR HIGH METRIC)
                     try {
-                        // Set VPN route metric RENDAH
-                        Runtime.getRuntime().exec("ip route add 0.0.0.0/1 dev tun0 metric 10")
-                        Runtime.getRuntime().exec("ip route add 128.0.0.0/1 dev tun0 metric 10")
+                        // VPN routes dengan LOW metric (10)
+                        Runtime.getRuntime().exec("ip route add 0.0.0.0/1 dev $ifaceName metric 10 2>/dev/null")
+                        Runtime.getRuntime().exec("ip route add 128.0.0.0/1 dev $ifaceName metric 10 2>/dev/null")
                         
-                        // Set cellular route metric TINGGI (override existing)
-                        Runtime.getRuntime().exec("ip route change default dev ccmni0 metric 100")
+                        // Cellular route dengan HIGH metric (100)
+                        Runtime.getRuntime().exec("ip route change default dev ccmni0 metric 100 2>/dev/null")
+                        
+                        LogUtil.d(TAG, "🔥 METRIC WAR INITIATED: VPN(10) vs Cellular(100)")
                     } catch (e: Exception) {
-                        // Non-root expected to fail, but try anyway
+                        LogUtil.w(TAG, "⚠️ Metric war failed (non-root limitation)")
                     }
-
-                    // 🔥 PACKET FORWARDING FIX
+            
+                    // 🔥 PHASE 2: PACKET FORWARDING ATTEMPT (NON-ROOT MAY FAIL)
                     try {
                         // Enable IP forwarding
-                        Runtime.getRuntime().exec("echo 1 > /proc/sys/net/ipv4/ip_forward")
+                        Runtime.getRuntime().exec("echo 1 > /proc/sys/net/ipv4/ip_forward 2>/dev/null")
                         
                         // Enable packet forwarding untuk tun0
-                        Runtime.getRuntime().exec("iptables -A FORWARD -i tun0 -j ACCEPT")
-                        Runtime.getRuntime().exec("iptables -A FORWARD -o tun0 -j ACCEPT")
+                        Runtime.getRuntime().exec("iptables -A FORWARD -i tun0 -j ACCEPT 2>/dev/null")
+                        Runtime.getRuntime().exec("iptables -A FORWARD -o tun0 -j ACCEPT 2>/dev/null")
                         
                         // NAT untuk traffic keluar
-                        Runtime.getRuntime().exec("iptables -t nat -A POSTROUTING -o ccmni0 -j MASQUERADE")
+                        Runtime.getRuntime().exec("iptables -t nat -A POSTROUTING -o ccmni0 -j MASQUERADE 2>/dev/null")
                         
-                        LogUtil.d(TAG, "🔥 PACKET FORWARDING ENABLED")
+                        LogUtil.d(TAG, "🔥 PACKET FORWARDING ATTEMPTED")
                     } catch (e: Exception) {
-                        LogUtil.w(TAG, "⚠️ Packet forwarding failed (non-root)")
+                        LogUtil.w(TAG, "⚠️ Packet forwarding failed (expected for non-root)")
                     }
                     
-                    // 🔥 TEST CONNECTIVITY
+                    // 🔥 PHASE 3: ROUTE FLUSH CACHE - FORCE KERNEL RE-EVALUATE
                     try {
-                        // Test DNS resolution through VPN
-                        Runtime.getRuntime().exec("ping -c 2 -I tun0 1.1.1.1")
-                        LogUtil.d(TAG, "✅ Ping test initiated through tun0")
-                    } catch (e: Exception) {
-                        LogUtil.w(TAG, "⚠️ Ping test failed")
-                    }
-                    
-                    // 🔥 ROUTE FLUSH CACHE - FORCE KERNEL RE-EVALUATE
-                    try {
-                        Runtime.getRuntime().exec("ip route flush cache")
+                        Runtime.getRuntime().exec("ip route flush cache 2>/dev/null")
                         LogUtil.d(TAG, "✅ Route cache flushed")
                     } catch (e: Exception) {
                         // Continue
                     }
-
+            
+                    // 🔥 PHASE 4: SKIP PROCESS BINDING (AVOID DNS PROXY LOOP)
                     try {
                         val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
                         val allNetworks = cm.allNetworks
@@ -265,28 +261,29 @@ class VpnDnsService : VpnService() {
                         for (network in allNetworks) {
                             val caps = cm.getNetworkCapabilities(network)
                             if (caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true) {
-                                //cm.bindProcessToNetwork(network)
-                                //LogUtil.d(TAG, "✅ PROCESS BOUND TO VPN NETWORK")
+                                // ⚠️ JANGAN BIND - CAUSE CIRCULAR ROUTING FOR DNS PROXY!
+                                // cm.bindProcessToNetwork(network)
                                 LogUtil.d(TAG, "⚠️ SKIP bindProcessToNetwork (avoid DNS proxy loop)")
                                 break
                             }
                         }
                     } catch (e: Exception) {
-                        LogUtil.w(TAG, "⚠️ Process bind failed")
+                        LogUtil.w(TAG, "⚠️ Process bind check failed")
                     }
                     
-                    // 🔥 ROUTE INJECTION ATTEMPT (NON-ROOT)
-                    val ifaceName = getVpnInterfaceName()
-                    try {
-                        // Cubaan set metric rendah
-                        Runtime.getRuntime().exec("ip route add default dev $ifaceName metric 50")
-                        LogUtil.d(TAG, "⚠️ Metric injection attempted (may fail non-root)")
-                    } catch (e: Exception) {
-                        // Expected for non-root
-                    }
-                    
-                    // START DNS PROXY (INTERCEPT TELCO DNS)
+                    // 🔥 PHASE 5: START SOCKS5 PROXY BYPASS (MAIN FIX!)
+                    setupSocks5ProxyThroughVpn()
+            
+                    // 🔥 PHASE 6: START DNS PROXY (INTERCEPT TELCO DNS)
                     startAggressiveDnsProxy("203.82.91.14")
+                    
+                    // 🔥 PHASE 7: TEST CONNECTIVITY (OPTIONAL)
+                    try {
+                        Runtime.getRuntime().exec("ping -c 2 -I $ifaceName 1.1.1.1 2>/dev/null")
+                        LogUtil.d(TAG, "✅ Ping test initiated through $ifaceName")
+                    } catch (e: Exception) {
+                        LogUtil.w(TAG, "⚠️ Ping test failed (expected)")
+                    }
                 }
                 
                 isRunning.set(true)

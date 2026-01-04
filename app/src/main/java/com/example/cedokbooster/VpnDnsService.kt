@@ -117,164 +117,176 @@ class VpnDnsService : VpnService() {
     
     private fun setupNuclearRouteHijack(dnsServers: List<String>): Boolean {
         return try {
-            LogUtil.d(TAG, "🔥 NUCLEAR ROUTE HIJACK ACTIVATED")
+            LogUtil.d(TAG, "🔥 ANDROID 10 PSYCHO MODE - NO allowBypass MITOS")
             
             mobileGateway = detectMobileGateway()
             vpnInterface?.close()
             
-            overrideRealmeNetworkProps()
+            // 🔥 CONDITION REALME (SOCIAL ENGINEERING)
+            conditionRealmeNetworkProps()
             
             val builder = Builder()
-                .setSession("CB-NUCLEAR-HIJACK")
+                .setSession("CCMNI0-EXTENSION")
                 .addAddress("100.64.0.2", 24)
                 .setMtu(1280)
                 .setBlocking(false)
-                .allowBypass(false)
+                // .allowBypass(false)  ← INI MITOS! BUANG!
             
-            dnsServers.forEach { dns ->
-                builder.addDnsServer(dns)
+            // 🔥 DNS DECEPTION: TELCO DNS DEPAN, OUR DNS BELAKANG
+            builder.addDnsServer("203.82.91.14")  // TIPU: TELCO DNS
+            builder.addDnsServer("203.82.91.30")  // TIPU: TELCO DNS
+            builder.addDnsServer("1.1.1.1")       // REAL: KITA CONTROL
+            builder.addDnsServer("1.0.0.1")
+            
+            // 🔥 ANDROID 10 TRICK 1: DISALLOW SYSTEM APPS SAHAJA
+            // Biar user apps semua melalui VPN
+            try {
+                // SystemUI, Settings, etc. biar bypass (elak detection)
+                builder.addDisallowedApplication("com.android.systemui")
+                builder.addDisallowedApplication("com.android.settings")
+                builder.addDisallowedApplication("com.android.phone")
+                LogUtil.d(TAG, "✅ System apps disallowed (stealth mode)")
+            } catch (e: Exception) {
+                LogUtil.w(TAG, "⚠️ Cannot disallow system apps")
             }
             
-            // 🔥 HIJACK ALL DNS + DEFAULT ROUTE TRICK
-            builder.addRoute("203.82.91.14", 32)  // Telco DNS
-            builder.addRoute("203.82.91.30", 32)  // Telco DNS
-            builder.addRoute("1.1.1.1", 32)
-            builder.addRoute("1.0.0.1", 32)
+            // 🔥 ANDROID 10 TRICK 2: FULL IP RANGE COVERAGE
+            // Tanpa allowBypass, kita cover semua IP range
+            // 0.0.0.0/1 + 128.0.0.0/1 = semua IP di dunia
+            builder.addRoute("0.0.0.0", 1)      // 0-127.255.255.255
+            builder.addRoute("128.0.0.0", 1)    // 128-255.255.255.255
+            
+            // 🔥 ROUTE KE DNS TELCO MELALUI VPN (INTERCEPT)
+            builder.addRoute("203.82.91.14", 32)
+            builder.addRoute("203.82.91.30", 32)
+            
+            // 🔥 ROUTE KE PUBLIC DNS MELALUI VPN (JIC)
             builder.addRoute("8.8.8.8", 32)
             builder.addRoute("8.8.4.4", 32)
-            builder.addRoute("9.9.9.9", 32)
             
-            // 🔥 TWO-HALVES DEFAULT ROUTE (stealth!)
-            builder.addRoute("0.0.0.0", 1)      // 0-127.x.x.x
-            builder.addRoute("128.0.0.0", 1)    // 128-255.x.x.x
-            
+            // 🔥 ANDROID 10 TRICK 3: CLAIM CELLULAR IDENTITY (API 23+)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 try {
-                    val method = builder.javaClass.getDeclaredMethod(
-                        "setUnderlyingNetworks", 
-                        Array<Network>::class.java
-                    )
-                    method.invoke(builder, null as Array<Network>?)
-                    LogUtil.d(TAG, "✅ Bound to ALL networks")
+                    val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+                    val activeNet = cm.activeNetwork
                     
+                    if (activeNet != null) {
+                        val method = builder.javaClass.getDeclaredMethod(
+                            "setUnderlyingNetworks", 
+                            Array<Network>::class.java
+                        )
+                        method.invoke(builder, arrayOf(activeNet))
+                        LogUtil.d(TAG, "✅ CLAIMED CELLULAR NETWORK: $activeNet")
+                    }
+                    
+                    // METERED = CELLULAR CHARACTERISTIC
                     try {
                         val setMeteredMethod = builder.javaClass.getDeclaredMethod(
                             "setMetered",
                             Boolean::class.java
                         )
                         setMeteredMethod.invoke(builder, true)
-                        LogUtil.d(TAG, "✅ Set as metered network")
+                        LogUtil.d(TAG, "✅ SET AS METERED (cellular-like)")
                     } catch (e: Exception) {
-                        // Continue
+                        // API 29 mungkin tak support
                     }
                 } catch (e: Exception) {
-                    LogUtil.w(TAG, "⚠️ Advanced hiding failed: ${e.message}")
+                    LogUtil.w(TAG, "⚠️ Cellular identity theft failed: ${e.message}")
                 }
             }
             
+            // 🔥 ESTABLISH VPN
             val fd = builder.establish()
             if (fd != null) {
                 vpnInterface = fd
                 
-                // 🔥 REALME FIX: Force default route AFTER establish
+                // 🔥 ANDROID 10 TRICK 4: BIND PROCESS TO VPN
                 coroutineScope.launch {
-                    delay(500)
-                    
-                    // Get actual interface name
-                    val ifaceName = getVpnInterfaceName()
-                    LogUtil.d(TAG, "🔥 VPN Interface: $ifaceName")
+                    delay(800)
                     
                     try {
-                        // 🔥 METHOD 1: ip command
-                        val commands = arrayOf(
-                            "ip route add default dev $ifaceName metric 1",
-                            "ip route add 0.0.0.0/1 dev $ifaceName",
-                            "ip route add 128.0.0.0/1 dev $ifaceName",
-                            "ip route flush cache"
-                        )
+                        val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+                        val allNetworks = cm.allNetworks
                         
-                        for (cmd in commands) {
-                            try {
-                                Runtime.getRuntime().exec(arrayOf("sh", "-c", cmd)).waitFor()
-                                LogUtil.d(TAG, "✅ $cmd")
-                            } catch (e: Exception) {
-                                LogUtil.w(TAG, "⚠️ $cmd failed")
+                        // Cari network VPN kita
+                        for (network in allNetworks) {
+                            val caps = cm.getNetworkCapabilities(network)
+                            if (caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true) {
+                                cm.bindProcessToNetwork(network)
+                                LogUtil.d(TAG, "✅ PROCESS BOUND TO VPN NETWORK")
+                                break
                             }
                         }
-                        
-                        delay(500)
-                        
-                        // Verify routing
-                        val routeCheck = Runtime.getRuntime().exec("ip route show")
-                        val routes = routeCheck.inputStream.bufferedReader().readText()
-                        LogUtil.d(TAG, "🔥 ROUTES AFTER FIX:\n$routes")
-                        
-                        if (routes.contains("default dev $ifaceName")) {
-                            LogUtil.d(TAG, "🎯 DEFAULT ROUTE SUCCESS!")
-                        } else {
-                            LogUtil.e(TAG, "❌ DEFAULT ROUTE FAILED!")
-                        }
-                        
                     } catch (e: Exception) {
-                        LogUtil.e(TAG, "💥 Route injection failed: ${e.message}")
+                        LogUtil.w(TAG, "⚠️ Process bind failed")
                     }
                     
-                    startAggressiveDnsProxy(dnsServers.first())
+                    // 🔥 ROUTE INJECTION ATTEMPT (NON-ROOT)
+                    val ifaceName = getVpnInterfaceName()
+                    try {
+                        // Cubaan set metric rendah
+                        Runtime.getRuntime().exec("ip route add default dev $ifaceName metric 50")
+                        LogUtil.d(TAG, "⚠️ Metric injection attempted (may fail non-root)")
+                    } catch (e: Exception) {
+                        // Expected for non-root
+                    }
+                    
+                    // START DNS PROXY (INTERCEPT TELCO DNS)
+                    startAggressiveDnsProxy("203.82.91.14")
                 }
                 
                 isRunning.set(true)
                 currentMethod = BattleMethod.NUCLEAR_ROUTE_HIJACK
-                LogUtil.d(TAG, "🎯 NUCLEAR HIJACK SUCCESS")
-                true
+                LogUtil.d(TAG, "🎯 ANDROID 10 HIJACK SUCCESS (No allowBypass myth)")
+                return true
             } else {
-                LogUtil.e(TAG, "❌ Nuclear hijack failed")
-                false
+                LogUtil.e(TAG, "❌ VPN Establishment failed")
+                return false
             }
             
         } catch (e: Exception) {
-            LogUtil.e(TAG, "💥 Nuclear error: ${e.message}")
-            false
+            LogUtil.e(TAG, "💥 Android 10 hijack failed: ${e.message}")
+            return false
         }
     }
     
-    private fun overrideRealmeNetworkProps() {
+    private fun conditionRealmeNetworkProps() {
         try {
+            // NON-ROOT FRIENDLY PROPERTIES ONLY
             val props = listOf(
-                "setprop oppo.service.datafree.enable 1",
-                "setprop persist.oppo.network.operator 0",
-                "setprop net.tethering.noprovisioning true",
-                "setprop net.dns1 1.1.1.1",
-                "setprop net.dns2 1.0.0.1",
-                "setprop net.rmnet0.dns1 1.1.1.1",
-                "setprop net.rmnet0.dns2 1.0.0.1"
+                // Ini boleh access tanpa root (testing properties)
+                "setprop debug.vpn.ready 1",
+                "setprop vpn.service.active true",
+                "setprop net.dns.cache.ttl 300",
+                // Oppo/Realme specific (mungkin boleh)
+                "setprop persist.sys.vpn.enable 1",
+                "setprop ro.vendor.vpn.support 1"
             )
             
             for (cmd in props) {
                 try {
                     Runtime.getRuntime().exec(arrayOf("sh", "-c", cmd))
-                    Thread.sleep(50)
+                    Thread.sleep(20)
                 } catch (e: Exception) {
-                    // Continue
+                    // Expected for non-root
                 }
             }
             
-            LogUtil.d(TAG, "✅ Realme properties overridden")
+            LogUtil.d(TAG, "✅ Realme conditioning attempted")
             
         } catch (e: Exception) {
-            LogUtil.w(TAG, "⚠️ Props override failed")
+            LogUtil.w(TAG, "⚠️ Conditioning failed (non-root limitation)")
         }
     }
     
     private fun startAggressiveDnsProxy(targetDns: String) {
         try {
-            // 🔥 NUCLEAR CLEANUP - Kill semua yang pakai port kita
+            // 🔥 NUCLEAR CLEANUP
             dnsProxyThread?.interrupt()
             dnsProxySocket?.close()
-            
-            // 🔥 WAIT FOR CLEANUP
             Thread.sleep(200)
             
-            // 🔥 PORT STRATEGY - Multiple port attempts
+            // 🔥 PORT STRATEGY
             val portStrategy = listOf(
                 Pair(5353, "PRIMARY"),
                 Pair(5354, "SECONDARY"), 
@@ -283,51 +295,38 @@ class VpnDnsService : VpnService() {
                 Pair(53535, "RANDOM")
             )
             
-            var successfulPort = -1
             var server: DatagramSocket? = null
             
-            // 🔥 AGGRESSIVE PORT ACQUISITION
             for ((port, name) in portStrategy) {
                 try {
-                    // 🔥 KILL EXISTING PROCESS ON PORT (non-root method)
+                    // Try release port
                     try {
                         Runtime.getRuntime().exec(arrayOf(
                             "sh", "-c",
-                            """
-                            # Try release port
-                            fuser -k $port/udp 2>/dev/null || true
-                            killall mdnsd 2>/dev/null || true
-                            """
+                            "fuser -k $port/udp 2>/dev/null || true; killall mdnsd 2>/dev/null || true"
                         ))
                         Thread.sleep(100)
-                    } catch (e: Exception) {
-                        // Non-root limitation
-                    }
+                    } catch (e: Exception) { /* Non-root */ }
                     
-                    // 🔥 TRY BIND WITH REUSE ADDRESS
                     server = DatagramSocket(null).apply {
                         reuseAddress = true
                         soTimeout = 5000
                         bind(InetSocketAddress(port))
                     }
                     
-                    successfulPort = port
                     dnsProxySocket = server
                     LogUtil.d(TAG, "🔥 DNS Proxy ACQUIRED port $port ($name)")
                     
-                    // 🔥 SET SYSTEM PROPERTIES untuk announce port kita
                     try {
                         Runtime.getRuntime().exec("setprop net.dns.proxy.port $port")
                         Runtime.getRuntime().exec("setprop net.local.dns.port $port")
-                    } catch (e: Exception) {
-                        // Non-root, continue
-                    }
+                    } catch (e: Exception) { /* Non-root */ }
                     
                     break
                     
                 } catch (e: SocketException) {
                     if (e.message?.contains("EADDRINUSE") == true) {
-                        LogUtil.w(TAG, "🚨 Port $port occupied, trying next...")
+                        LogUtil.w(TAG, "🚨 Port $port occupied")
                         continue
                     } else {
                         throw e
@@ -340,24 +339,33 @@ class VpnDnsService : VpnService() {
                 return
             }
             
-            // 🔥🔥🔥 WARRIOR FIX: SEPARATE SOCKET ARCHITECTURE 🔥🔥🔥
+            // 🔥 WARRIOR ARCHITECTURE (SINGLE THREAD, NO DOUBLE NESTING)
             dnsProxyThread = Thread {
                 var consecutiveErrors = 0
                 val maxErrors = 3
+                
+                // 🔥 GUNA PARAMETER targetDns
+                val primaryDns = targetDns  // "203.82.91.14"
+                
+                // 🔥 FALLBACK DNS LIST
+                val fallbackDnsList = listOf(
+                    primaryDns,      // TELCO DNS FIRST
+                    "1.1.1.1",      // Cloudflare
+                    "1.0.0.1",      // Cloudflare  
+                    "8.8.8.8",      // Google
+                    "9.9.9.9"       // Quad9
+                )
                 
                 while (!Thread.currentThread().isInterrupted && isRunning.get()) {
                     try {
                         val buffer = ByteArray(1024)
                         val packet = DatagramPacket(buffer, buffer.size)
                         
-                        // 🔥 SOCKET A: LISTEN (port 5353)
                         server!!.soTimeout = 30000
                         server!!.receive(packet)
                         
-                        // 🔥 RESET ERROR COUNTER on successful receive
                         consecutiveErrors = 0
                         
-                        // 🔥 LOG DNS QUERIES
                         val clientIp = packet.address.hostAddress
                         val clientPort = packet.port
                         
@@ -370,129 +378,110 @@ class VpnDnsService : VpnService() {
                                 
                                 LogUtil.d(TAG, "📡 DNS Query #$queryId from $clientIp:$clientPort")
                                 
-                                // 🔥 DETECT RIDER APPS
                                 val queryStr = String(queryData).toLowerCase()
                                 if (queryStr.contains("foodpanda") || 
                                     queryStr.contains("grabfood") || 
                                     queryStr.contains("mapbox")) {
-                                    LogUtil.d(TAG, "🎯 RIDER APP DETECTED! Priority handling...")
+                                    LogUtil.d(TAG, "🎯 RIDER APP DETECTED!")
                                 }
                             }
                         } catch (e: Exception) {
-                            // Continue anyway
+                            // Continue
                         }
                         
-                        // 🔥🔥🔥 WARRIOR FIX: PARALLEL PROCESSING WITH SEPARATE SOCKETS 🔥🔥🔥
+                        // 🔥 PARALLEL PROCESSING (INNER THREAD OK)
                         Thread {
-                            // 🔥 SOCKET B & C: FORWARD & RECEIVE (random ports)
                             var forwardSocket: DatagramSocket? = null
                             
                             try {
-                                // 🔥 MULTI-DNS FALLBACK
-                                val dnsServers = listOf(
-                                    "1.1.1.1",    // Cloudflare Primary
-                                    "1.0.0.1",    // Cloudflare Secondary  
-                                    "8.8.8.8",    // Google Primary
-                                    "8.8.4.4",    // Google Secondary
-                                    "9.9.9.9"     // Quad9
-                                )
-                                
                                 var resolved = false
                                 
-                                for (dnsServer in dnsServers) {
+                                for (dnsServer in fallbackDnsList) {
                                     try {
-                                        // 🔥 WARRIOR FIX: CREATE DEDICATED FORWARD SOCKET
-                                        // Socket B: For sending to DNS server
-                                        // Socket C: For receiving from DNS server (SAME socket, different purpose)
-                                        forwardSocket?.close()  // Close previous attempt
-                                        forwardSocket = DatagramSocket()  // NEW socket with RANDOM port
+                                        forwardSocket?.close()
+                                        forwardSocket = DatagramSocket()
                                         forwardSocket.soTimeout = 3000
                                         
-                                        // 🔥 PREPARE QUERY DATA
                                         val forwardData = packet.data.copyOf(packet.length)
                                         
-                                        // 🔥 SOCKET B: SEND to DNS server
+                                        // 🔥 STEALTH MODE
+                                        val stealthDns = when {
+                                            dnsServer == "203.82.91.14" -> "1.1.1.1"
+                                            dnsServer == "203.82.91.30" -> "1.0.0.1"
+                                            else -> dnsServer
+                                        }
+                                        
                                         val forwardPacket = DatagramPacket(
                                             forwardData,
                                             packet.length,
-                                            InetAddress.getByName(dnsServer),
+                                            InetAddress.getByName(stealthDns),
                                             53
                                         )
                                         forwardSocket.send(forwardPacket)
                                         
-                                        // 🔥 SOCKET C: RECEIVE from DNS server (SAME socket as B)
                                         val response = ByteArray(1024)
                                         val responsePacket = DatagramPacket(response, response.size)
                                         forwardSocket.receive(responsePacket)
                                         
-                                        // 🔥 SOCKET A: SEND back to client (original listening socket)
-                                        // KEY FIX: Use server socket (5353) to reply, NOT forwardSocket!
                                         val replyPacket = DatagramPacket(
                                             response, 
                                             responsePacket.length, 
-                                            packet.address,  // Original client IP
-                                            packet.port      // Original client port
+                                            packet.address,
+                                            packet.port
                                         )
                                         server!!.send(replyPacket)
                                         
                                         resolved = true
-                                        LogUtil.d(TAG, "✅ DNS resolved via $dnsServer → client $clientIp:$clientPort")
+                                        LogUtil.d(TAG, "✅ DNS via $stealthDns → $clientIp:$clientPort")
                                         break
                                         
                                     } catch (e: SocketTimeoutException) {
                                         LogUtil.w(TAG, "⚠️ $dnsServer timeout")
-                                        continue  // Try next server
+                                        continue
                                     } catch (e: Exception) {
-                                        LogUtil.w(TAG, "❌ $dnsServer failed: ${e.message}")
-                                        continue  // Try next server
+                                        LogUtil.w(TAG, "❌ $dnsServer failed")
+                                        continue
                                     } finally {
-                                        // Clean up forward socket after each attempt
                                         forwardSocket?.close()
                                     }
                                 }
                                 
                                 if (!resolved) {
-                                    LogUtil.e(TAG, "💥 All DNS servers failed for query from $clientIp:$clientPort")
+                                    LogUtil.e(TAG, "💥 All DNS failed for $clientIp:$clientPort")
                                 }
                                 
                             } catch (e: Exception) {
-                                LogUtil.w(TAG, "⚠️ Forwarding error: ${e.message}")
+                                LogUtil.w(TAG, "⚠️ Forwarding error")
                             } finally {
-                                // 🔥 ENSURE SOCKET CLEANUP
                                 forwardSocket?.close()
                             }
                         }.start()
                         
                     } catch (e: SocketTimeoutException) {
-                        // 🔥 NO TRAFFIC - Normal, just continue
                         consecutiveErrors = 0
-                        
                     } catch (e: Exception) {
                         consecutiveErrors++
-                        LogUtil.w(TAG, "⚠️ DNS Proxy error #$consecutiveErrors: ${e.message}")
+                        LogUtil.w(TAG, "⚠️ DNS Proxy error #$consecutiveErrors")
                         
-                        // 🔥 AUTO-RECOVERY on multiple errors
                         if (consecutiveErrors >= maxErrors) {
-                            LogUtil.e(TAG, "🚨 CRITICAL ERROR - Attempting auto-recovery...")
+                            LogUtil.e(TAG, "🚨 CRITICAL ERROR - Auto-recovery...")
                             
                             try {
                                 server?.close()
                                 Thread.sleep(500)
                                 
-                                // 🔥 RESTART WITH DIFFERENT PORT
                                 if (isRunning.get()) {
                                     startAggressiveDnsProxy(targetDns)
                                 }
                                 return@Thread
                             } catch (re: Exception) {
-                                LogUtil.e(TAG, "💥 Auto-recovery failed: ${re.message}")
+                                LogUtil.e(TAG, "💥 Auto-recovery failed")
                             }
                             break
                         }
                     }
                 }
                 
-                // 🔥 CLEAN EXIT
                 try {
                     server?.close()
                     LogUtil.d(TAG, "✅ DNS Proxy shutdown cleanly")
@@ -501,7 +490,6 @@ class VpnDnsService : VpnService() {
                 }
             }
             
-            // 🔥 SET THREAD PRIORITY
             dnsProxyThread?.priority = Thread.MAX_PRIORITY
             dnsProxyThread?.start()
             
@@ -510,7 +498,6 @@ class VpnDnsService : VpnService() {
         } catch (e: Exception) {
             LogUtil.e(TAG, "🔥 DNS Proxy INIT failed: ${e.message}")
             
-            // 🔥 LAST RESORT - Try again in 3 seconds
             coroutineScope.launch {
                 delay(3000)
                 if (isRunning.get()) {

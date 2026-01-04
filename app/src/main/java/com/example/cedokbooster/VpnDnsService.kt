@@ -210,20 +210,17 @@ class VpnDnsService : VpnService() {
                 coroutineScope.launch {
                     delay(800)
 
-                    val ifaceName = getVpnInterfaceName()
-
-                    // 🔥 METRIC WAR: VPN LOW METRIC, CELLULAR HIGH METRIC
+                    // TAPI kita set metric untuk VPN ROUTES RENDAH (10), cellular metric tinggi (100)
+                    // Dalam coroutineScope.launch, cuba inject:
                     try {
-                        // VPN routes with LOW metric (10)
-                        Runtime.getRuntime().exec("ip route add 0.0.0.0/1 dev $ifaceName metric 10")
-                        Runtime.getRuntime().exec("ip route add 128.0.0.0/1 dev $ifaceName metric 10")
+                        // Set VPN route metric RENDAH
+                        Runtime.getRuntime().exec("ip route add 0.0.0.0/1 dev tun0 metric 10")
+                        Runtime.getRuntime().exec("ip route add 128.0.0.0/1 dev tun0 metric 10")
                         
-                        // Try to change cellular route to HIGH metric (100)
+                        // Set cellular route metric TINGGI (override existing)
                         Runtime.getRuntime().exec("ip route change default dev ccmni0 metric 100")
-                        
-                        LogUtil.d(TAG, "🔥 METRIC WAR INITIATED: VPN(10) vs Cellular(100)")
                     } catch (e: Exception) {
-                        LogUtil.w(TAG, "⚠️ Metric war failed (non-root limitation)")
+                        // Non-root expected to fail, but try anyway
                     }
                     
                     // 🔥 ROUTE FLUSH CACHE - FORCE KERNEL RE-EVALUATE

@@ -92,6 +92,33 @@ class VpnDnsService : VpnService() {
             currentDns = it.first()
         }
     }
+
+    private fun getVpnInterfaceName(): String {
+        return try {
+            val process = Runtime.getRuntime().exec("ip addr show")
+            val output = process.inputStream.bufferedReader().readText()
+            
+            // Find tun interface yang UP
+            val lines = output.split("\n")
+            for (i in lines.indices) {
+                val line = lines[i]
+                if (line.contains("tun") && line.contains("UP")) {
+                    // Extract interface name (e.g., "tun2:")
+                    val parts = line.split(":")
+                    if (parts.isNotEmpty()) {
+                        val name = parts[0].trim().split(" ").last()
+                        LogUtil.d(TAG, "🔥 Found VPN interface: $name")
+                        return name
+                    }
+                }
+            }
+            
+            "tun0" // fallback
+        } catch (e: Exception) {
+            LogUtil.w(TAG, "⚠️ Failed to detect interface: ${e.message}")
+            "tun0"
+        }
+    }
     
     private fun setupNuclearRouteHijack(dnsServers: List<String>): Boolean {
         return try {
@@ -106,28 +133,21 @@ class VpnDnsService : VpnService() {
                 .setSession("CB-NUCLEAR-HIJACK")
                 .addAddress("100.64.0.2", 24)
                 .setMtu(1280)
-                .setBlocking(true)
+                .setBlocking(false)
             
             dnsServers.forEach { dns ->
                 builder.addDnsServer(dns)
             }
             
-            repeat(3) {
-                builder.addRoute("0.0.0.0", 0)
-            }
-            
-            builder.addRoute("10.66.191.0", 24)
-            builder.addRoute(mobileGateway, 32)
-            builder.addRoute("10.0.0.0", 8)
+            // 🔥 REALME WORKAROUND: Specific routes only, NO default in builder
             builder.addRoute("1.1.1.1", 32)
             builder.addRoute("1.0.0.1", 32)
             builder.addRoute("8.8.8.8", 32)
-            builder.addRoute("100.64.0.0", 24)
+            builder.addRoute("8.8.4.4", 32)
+            builder.addRoute("9.9.9.9", 32)
             
-            // 🔥🔥🔥 VPN HIDING TECHNIQUES 🔥🔥🔥
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 try {
-                    // 1. Bind to ALL networks
                     val method = builder.javaClass.getDeclaredMethod(
                         "setUnderlyingNetworks", 
                         Array<Network>::class.java
@@ -135,9 +155,7 @@ class VpnDnsService : VpnService() {
                     method.invoke(builder, null as Array<Network>?)
                     LogUtil.d(TAG, "✅ Bound to ALL networks")
                     
-                    // 2. Try HIDE VPN NATURE
                     try {
-                        // Method A: Set as metered (like cellular)
                         val setMeteredMethod = builder.javaClass.getDeclaredMethod(
                             "setMetered",
                             Boolean::class.java
@@ -145,92 +163,58 @@ class VpnDnsService : VpnService() {
                         setMeteredMethod.invoke(builder, true)
                         LogUtil.d(TAG, "✅ Set as metered network")
                     } catch (e: Exception) {
-                        // Android version might not support
+                        // Continue
                     }
-                    
-                    // 3. Try set interface name bukan "tun0"
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                        try {
-                            val setInterfaceMethod = builder.javaClass.getDeclaredMethod(
-                                "setInterface",
-                                String::class.java
-                            )
-                            setInterfaceMethod.invoke(builder, "dns0")
-                            LogUtil.d(TAG, "✅ Interface name changed to dns0")
-                        } catch (e: Exception) {
-                            // Continue
-                        }
-                    }
-                    
                 } catch (e: Exception) {
                     LogUtil.w(TAG, "⚠️ Advanced hiding failed: ${e.message}")
-                    // Continue with basic setup
                 }
             }
             
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                try {
-                    val method = builder.javaClass.getDeclaredMethod(
-                        "setConfigureIntent", 
-                        PendingIntent::class.java
-                    )
-                    method.invoke(builder, null)
-                } catch (e: Exception) {
-                    // Continue
-                }
-            }
-            
-            // 🔥 REFLECTION untuk modify network capabilities
-            try {
-                val configField = builder.javaClass.getDeclaredField("mConfig")
-                configField.isAccessible = true
-                val config = configField.get(builder)
-                
-                val transportsField = config.javaClass.getDeclaredField("transports")
-                transportsField.isAccessible = true
-                var transports = transportsField.get(config) as Long
-                
-                // Remove VPN bit (1 << 4 = 16 for VPN)
-                transports = transports and (1 shl 4).toLong().inv()
-                transportsField.set(config, transports)
-                
-                // Add Cellular bit (1 << 0 = 1 for CELLULAR)
-                transports = transports or (1 shl 0).toLong()
-                transportsField.set(config, transports)
-                
-                LogUtil.d(TAG, "✅ Modified transports to hide VPN")
-            } catch (e: Exception) {
-                LogUtil.w(TAG, "⚠️ Reflection hiding failed: ${e.message}")
-            }
-            
-            builder.establish()?.let { fd ->
+            val fd = builder.establish()
+            if (fd != null) {
                 vpnInterface = fd
                 
+                // 🔥 REALME FIX: Force default route AFTER establish
                 coroutineScope.launch {
-                    delay(1000)
-                    
-                    try {
-                        Runtime.getRuntime().exec(arrayOf(
-                            "sh", "-c",
-                            "ip route replace default dev tun0 metric 50 2>/dev/null || true;" +
-                            "ip route flush cache 2>/dev/null || true;" +
-                            "echo 0 > /proc/sys/net/ipv4/conf/ccmni1/rp_filter 2>/dev/null || true"
-                        ))
-                    } catch (e: Exception) {
-                        // Non-root limitation
-                    }
-                    
-                    // 🔥 Post-establishment SOCIAL ENGINEERING
                     delay(500)
+                    
+                    // Get actual interface name
+                    val ifaceName = getVpnInterfaceName()
+                    LogUtil.d(TAG, "🔥 VPN Interface: $ifaceName")
+                    
                     try {
-                        Runtime.getRuntime().exec(arrayOf(
-                            "sh", "-c",
-                            "setprop net.vpn.created 0;" +
-                            "setprop net.dns1 1.1.1.1;" +
-                            "setprop net.dns2 1.0.0.1"
-                        ))
+                        // 🔥 METHOD 1: ip command
+                        val commands = arrayOf(
+                            "ip route add default dev $ifaceName metric 1",
+                            "ip route add 0.0.0.0/1 dev $ifaceName",
+                            "ip route add 128.0.0.0/1 dev $ifaceName",
+                            "ip route flush cache"
+                        )
+                        
+                        for (cmd in commands) {
+                            try {
+                                Runtime.getRuntime().exec(arrayOf("sh", "-c", cmd)).waitFor()
+                                LogUtil.d(TAG, "✅ $cmd")
+                            } catch (e: Exception) {
+                                LogUtil.w(TAG, "⚠️ $cmd failed")
+                            }
+                        }
+                        
+                        delay(500)
+                        
+                        // Verify routing
+                        val routeCheck = Runtime.getRuntime().exec("ip route show")
+                        val routes = routeCheck.inputStream.bufferedReader().readText()
+                        LogUtil.d(TAG, "🔥 ROUTES AFTER FIX:\n$routes")
+                        
+                        if (routes.contains("default dev $ifaceName")) {
+                            LogUtil.d(TAG, "🎯 DEFAULT ROUTE SUCCESS!")
+                        } else {
+                            LogUtil.e(TAG, "❌ DEFAULT ROUTE FAILED!")
+                        }
+                        
                     } catch (e: Exception) {
-                        // Non-root limitation
+                        LogUtil.e(TAG, "💥 Route injection failed: ${e.message}")
                     }
                     
                     startAggressiveDnsProxy(dnsServers.first())
@@ -240,7 +224,7 @@ class VpnDnsService : VpnService() {
                 currentMethod = BattleMethod.NUCLEAR_ROUTE_HIJACK
                 LogUtil.d(TAG, "🎯 NUCLEAR HIJACK SUCCESS")
                 true
-            } ?: run {
+            } else {
                 LogUtil.e(TAG, "❌ Nuclear hijack failed")
                 false
             }

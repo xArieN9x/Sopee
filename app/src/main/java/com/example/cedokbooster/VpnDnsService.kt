@@ -222,6 +222,32 @@ class VpnDnsService : VpnService() {
                     } catch (e: Exception) {
                         // Non-root expected to fail, but try anyway
                     }
+
+                    // 🔥 PACKET FORWARDING FIX
+                    try {
+                        // Enable IP forwarding
+                        Runtime.getRuntime().exec("echo 1 > /proc/sys/net/ipv4/ip_forward")
+                        
+                        // Enable packet forwarding untuk tun0
+                        Runtime.getRuntime().exec("iptables -A FORWARD -i tun0 -j ACCEPT")
+                        Runtime.getRuntime().exec("iptables -A FORWARD -o tun0 -j ACCEPT")
+                        
+                        // NAT untuk traffic keluar
+                        Runtime.getRuntime().exec("iptables -t nat -A POSTROUTING -o ccmni0 -j MASQUERADE")
+                        
+                        LogUtil.d(TAG, "🔥 PACKET FORWARDING ENABLED")
+                    } catch (e: Exception) {
+                        LogUtil.w(TAG, "⚠️ Packet forwarding failed (non-root)")
+                    }
+                    
+                    // 🔥 TEST CONNECTIVITY
+                    try {
+                        // Test DNS resolution through VPN
+                        Runtime.getRuntime().exec("ping -c 2 -I tun0 1.1.1.1")
+                        LogUtil.d(TAG, "✅ Ping test initiated through tun0")
+                    } catch (e: Exception) {
+                        LogUtil.w(TAG, "⚠️ Ping test failed")
+                    }
                     
                     // 🔥 ROUTE FLUSH CACHE - FORCE KERNEL RE-EVALUATE
                     try {
@@ -239,8 +265,9 @@ class VpnDnsService : VpnService() {
                         for (network in allNetworks) {
                             val caps = cm.getNetworkCapabilities(network)
                             if (caps?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true) {
-                                cm.bindProcessToNetwork(network)
-                                LogUtil.d(TAG, "✅ PROCESS BOUND TO VPN NETWORK")
+                                //cm.bindProcessToNetwork(network)
+                                //LogUtil.d(TAG, "✅ PROCESS BOUND TO VPN NETWORK")
+                                LogUtil.d(TAG, "⚠️ SKIP bindProcessToNetwork (avoid DNS proxy loop)")
                                 break
                             }
                         }

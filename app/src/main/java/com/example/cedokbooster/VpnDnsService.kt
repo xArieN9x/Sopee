@@ -263,41 +263,6 @@ class VpnDnsService : VpnService() {
                         LogUtil.w(TAG, "⚠️ Packet forwarding failed (expected for non-root)")
                     }
 
-                    // 🔥 EMERGENCY: LOCAL TRAFFIC INTERCEPT
-                    if (!checkRoutesApplied()) {
-                        LogUtil.e(TAG, "🚨 REALME BLOCKED OUR ROUTES! Activating emergency mode...")
-                        activateEmergencyTrafficCapture()
-                    }
-                    
-                    private fun checkRoutesApplied(): Boolean {
-                        return try {
-                            val process = Runtime.getRuntime().exec("ip route show")
-                            val output = process.inputStream.bufferedReader().readText()
-                            
-                            // Check jika ada routes ke internet melalui tun0
-                            output.contains("0.0.0.0/.*dev tun0") || 
-                            output.contains("0.0.0.0/1 dev tun0") ||
-                            output.contains("128.0.0.0/1 dev tun0")
-                        } catch (e: Exception) {
-                            false
-                        }
-                    }
-                    
-                    private fun activateEmergencyTrafficCapture() {
-                        // 🔥 STRATEGY: CAPTURE LOCAL TRAFFIC & FORWARD
-                        // 1. Apps → local proxy (127.0.0.1:8080)
-                        // 2. Proxy forward melalui VPN socket
-                        // 3. Bypass kernel routing sepenuhnya
-                        
-                        LogUtil.d(TAG, "🔥 EMERGENCY TRAFFIC CAPTURE ACTIVATED")
-                        
-                        // Start local HTTP proxy
-                        startLocalHttpProxy(8080)
-                        
-                        // Notify apps untuk guna proxy
-                        broadcastProxySettings("127.0.0.1", 8080)
-                    }
-                    
                     // 🔥 PHASE 3: ROUTE FLUSH CACHE - FORCE KERNEL RE-EVALUATE
                     try {
                         Runtime.getRuntime().exec("ip route flush cache 2>/dev/null")

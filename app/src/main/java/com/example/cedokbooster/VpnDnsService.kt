@@ -272,7 +272,7 @@ class VpnDnsService : VpnService() {
                     }
                     
                     // 🔥 PHASE 5: START SOCKS5 PROXY BYPASS (MAIN FIX!)
-                    setupSocks5ProxyThroughVpn()
+                    //setupSocks5ProxyThroughVpn() <<-- x wujud dlm code ak
             
                     // 🔥 PHASE 6: START DNS PROXY (INTERCEPT TELCO DNS)
                     startAggressiveDnsProxy("203.82.91.14")

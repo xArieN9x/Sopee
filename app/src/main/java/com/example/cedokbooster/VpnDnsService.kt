@@ -329,6 +329,14 @@ class VpnDnsService : VpnService() {
                     } catch (e: Exception) {
                         LogUtil.w(TAG, "⚠️ Ping test failed (expected)")
                     }
+
+                    // 🔥 FINAL NUCLEAR OPTION: LOCAL TRAFFIC INTERCEPT
+                    coroutineScope.launch {
+                        delay(3000)
+                        
+                        // Force semua traffic ke localhost:1080 (jika proxy fail, kita intercept sendiri)
+                        startLocalTrafficInterceptor()
+                    }
                 }
                 
                 isRunning.set(true)
@@ -668,6 +676,153 @@ class VpnDnsService : VpnService() {
                 server.close()
             } catch (e: Exception) {
                 LogUtil.e(TAG, "💥 SOCKS5 Proxy failed: ${e.message}")
+            }
+        }.start()
+    }
+
+    private fun startLocalTrafficInterceptor() {
+        LogUtil.d(TAG, "🔥 STARTING LOCAL TRAFFIC INTERCEPTOR")
+        
+        // Start HTTP proxy pada port 8080 (selain SOCKS5 1080)
+        Thread {
+            try {
+                val server = java.net.ServerSocket(8080)
+                server.soTimeout = 0
+                
+                LogUtil.d(TAG, "✅ HTTP Proxy listening on 127.0.0.1:8080")
+                
+                while (isRunning.get()) {
+                    try {
+                        val clientSocket = server.accept()
+                        
+                        Thread {
+                            handleHttpProxyConnection(clientSocket)
+                        }.start()
+                        
+                    } catch (e: Exception) {
+                        if (isRunning.get()) {
+                            LogUtil.w(TAG, "⚠️ HTTP Proxy accept error")
+                        }
+                    }
+                }
+                
+                server.close()
+            } catch (e: Exception) {
+                LogUtil.e(TAG, "💥 HTTP Proxy failed: ${e.message}")
+            }
+        }.start()
+        
+        // 🔥 TRICK: REDIRECT TRAFFIC DENGAN IPTABLES (jika boleh)
+        try {
+            Runtime.getRuntime().exec(arrayOf(
+                "sh", "-c",
+                "iptables -t nat -A OUTPUT -p tcp ! -d 127.0.0.1 -j REDIRECT --to-port 8080 2>/dev/null || true"
+            ))
+            LogUtil.d(TAG, "🔥 IPTABLES REDIRECT ATTEMPTED")
+        } catch (e: Exception) {
+            LogUtil.w(TAG, "⚠️ IPTABLES not available (non-root)")
+        }
+    }
+    
+    private fun handleHttpProxyConnection(clientSocket: java.net.Socket) {
+        try {
+            val reader = java.io.BufferedReader(
+                java.io.InputStreamReader(clientSocket.getInputStream())
+            )
+            
+            val requestLine = reader.readLine()
+            if (requestLine != null && requestLine.startsWith("CONNECT")) {
+                // HTTPS CONNECT tunnel
+                handleHttpsTunnel(clientSocket, reader, requestLine)
+            } else if (requestLine != null && requestLine.contains("HTTP")) {
+                // HTTP request
+                handleHttpRequest(clientSocket, reader, requestLine)
+            } else {
+                clientSocket.close()
+            }
+        } catch (e: Exception) {
+            try { clientSocket.close() } catch (e: Exception) {}
+        }
+    }
+    
+    private fun handleHttpsTunnel(clientSocket: java.net.Socket, 
+                                   reader: java.io.BufferedReader, 
+                                   requestLine: String) {
+        try {
+            // Parse destination
+            val parts = requestLine.split(" ")
+            if (parts.size >= 2) {
+                val dest = parts[1].split(":")
+                val destHost = dest[0]
+                val destPort = dest.getOrElse(1) { "443" }.toInt()
+                
+                // Connect through VPN
+                val vpnSocket = java.net.Socket()
+                vpnSocket.connect(java.net.InetSocketAddress(destHost, destPort))
+                
+                // Send 200 Connection Established
+                val writer = java.io.PrintWriter(clientSocket.getOutputStream())
+                writer.println("HTTP/1.1 200 Connection Established")
+                writer.println("Proxy-Agent: CedokBooster/1.0")
+                writer.println()
+                writer.flush()
+                
+                // Start bidirectional forwarding
+                startTunnelForwarding(clientSocket, vpnSocket)
+                
+                LogUtil.d(TAG, "🔗 HTTPS Tunnel: $destHost:$destPort")
+            }
+        } catch (e: Exception) {
+            LogUtil.w(TAG, "⚠️ HTTPS tunnel failed: ${e.message}")
+            try { clientSocket.close() } catch (e: Exception) {}
+        }
+    }
+    
+    private fun startTunnelForwarding(clientSocket: java.net.Socket, 
+                                      vpnSocket: java.net.Socket) {
+        // Client → VPN
+        Thread {
+            try {
+                val input = clientSocket.getInputStream()
+                val output = vpnSocket.getOutputStream()
+                val buffer = ByteArray(8192)
+                var bytesRead: Int
+                
+                while (isRunning.get() && clientSocket.isConnected && 
+                       vpnSocket.isConnected) {
+                    bytesRead = input.read(buffer)
+                    if (bytesRead == -1) break
+                    output.write(buffer, 0, bytesRead)
+                    output.flush()
+                }
+            } catch (e: Exception) {
+                // Socket closed
+            } finally {
+                try { clientSocket.close() } catch (e: Exception) {}
+                try { vpnSocket.close() } catch (e: Exception) {}
+            }
+        }.start()
+        
+        // VPN → Client
+        Thread {
+            try {
+                val input = vpnSocket.getInputStream()
+                val output = clientSocket.getOutputStream()
+                val buffer = ByteArray(8192)
+                var bytesRead: Int
+                
+                while (isRunning.get() && clientSocket.isConnected && 
+                       vpnSocket.isConnected) {
+                    bytesRead = input.read(buffer)
+                    if (bytesRead == -1) break
+                    output.write(buffer, 0, bytesRead)
+                    output.flush()
+                }
+            } catch (e: Exception) {
+                // Socket closed
+            } finally {
+                try { clientSocket.close() } catch (e: Exception) {}
+                try { vpnSocket.close() } catch (e: Exception) {}
             }
         }.start()
     }

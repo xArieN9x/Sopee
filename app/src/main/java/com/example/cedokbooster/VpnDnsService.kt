@@ -11,15 +11,15 @@ import android.os.Build
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 
 class VpnDnsService : VpnService() {
     
@@ -30,6 +30,10 @@ class VpnDnsService : VpnService() {
         private const val DNS_PROXY_PORT = 5353
         private const val VPN_ADDRESS = "100.64.0.2"
         private const val VPN_PREFIX_LENGTH = 24
+        
+        // Actions - TETAPKAN DI SINI
+        private const val ACTION_START = "com.example.cedokbooster.START_DNS_VPN"
+        private const val ACTION_STOP = "com.example.cedokbooster.STOP_DNS_VPN"
         
         fun startVpn(context: Context) {
             val intent = Intent(context, VpnDnsService::class.java).apply {
@@ -44,11 +48,12 @@ class VpnDnsService : VpnService() {
             }
             context.startService(intent)
         }
+        
+        fun isVpnRunning(): Boolean {
+            // Tuan boleh implement state tracking di sini
+            return false
+        }
     }
-    
-    // Actions
-    private val ACTION_START = "${BuildConfig.APPLICATION_ID}.START_VPN"
-    private val ACTION_STOP = "${BuildConfig.APPLICATION_ID}.STOP_VPN"
     
     // State
     private var isRunning = AtomicBoolean(false)
@@ -449,6 +454,7 @@ class VpnDnsService : VpnService() {
         when (intent?.action) {
             ACTION_START -> startVpnService()
             ACTION_STOP -> stopVpnService()
+            else -> stopSelf()
         }
         return START_STICKY
     }
@@ -460,6 +466,11 @@ class VpnDnsService : VpnService() {
     }
     
     override fun onBind(intent: Intent?): IBinder? = null
+    
+    override fun onRevoke() {
+        LogUtil.d(TAG, "VPN revoked by system")
+        stopVpnService()
+    }
     
     /**
      * LOGGING UTILITY

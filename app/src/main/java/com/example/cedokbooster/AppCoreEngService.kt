@@ -123,10 +123,20 @@ class AppCoreEngService : Service() {
     private val restartReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == "RESTART_CORE_ENGINE") {
-                Log.d(TAG, "RESTART_CORE_ENGINE received - Restarting CoreEngine")
-                stopCoreEngine()  // Matikan dulu
+                Log.d(TAG, "RESTART_CORE_ENGINE received - SMART RESTART")
+                
+                // SMART RESTART: Stop-start CoreEngine TAPI soft-restart VPN
+                stopCoreEngine()
+                
                 handler.postDelayed({
-                    startCoreEngine() // Hidupkan semula
+                    startCoreEngine()
+                    
+                    // SOFT RESTART VPN (tanpa stop-start)
+                    handler.postDelayed({
+                        VpnDnsService.softRestartVpn(this@AppCoreEngService)
+                        Log.d(TAG, "VPN soft restart triggered")
+                    }, 500)
+                    
                 }, 1000)
             }
         }

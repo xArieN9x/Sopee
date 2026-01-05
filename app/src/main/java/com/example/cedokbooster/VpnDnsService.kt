@@ -7,19 +7,19 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.net.VpnService
-import android.os.Build
-import android.os.IBinder
-import android.os.ParcelFileDescriptor
+import android.os.*
 import androidx.core.app.NotificationCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 class VpnDnsService : VpnService() {
     
@@ -27,20 +27,19 @@ class VpnDnsService : VpnService() {
         private const val TAG = "VpnDnsService"
         private const val NOTIFICATION_ID = 999
         private const val CHANNEL_ID = "vpn_dns_channel"
-        //private const val DNS_PROXY_PORT = 5353
         private val PORT_STRATEGY = listOf(5353, 5354, 5355, 9999, 53535, 53536, 53537, 53538)
         private const val VPN_ADDRESS = "100.64.0.2"
         private const val VPN_PREFIX_LENGTH = 24
         
-        // Actions - TETAPKAN DI SINI (sama dengan original)
+        // Actions
         private const val ACTION_START_VPN = "com.example.cedokbooster.START_VPN"
         private const val ACTION_STOP_VPN = "com.example.cedokbooster.STOP_VPN"
+        private const val ACTION_SOFT_RESTART = "com.example.cedokbooster.SOFT_RESTART_VPN"
         const val EXTRA_DNS_TYPE = "dns_type"
         
         private var isRunning = AtomicBoolean(false)
         private var currentDns = "1.0.0.1"
         
-        // ✅ FIXED: SUPPORT BOTH SIGNATURES (untuk AppCoreEngService)
         fun startVpn(context: Context, dnsType: String = "A") {
             val intent = Intent(context, VpnDnsService::class.java).apply {
                 action = ACTION_START_VPN
@@ -49,7 +48,6 @@ class VpnDnsService : VpnService() {
             context.startService(intent)
         }
         
-        // Overload untuk compatibility
         fun startVpn(context: Context) {
             startVpn(context, "A")
         }
@@ -57,6 +55,13 @@ class VpnDnsService : VpnService() {
         fun stopVpn(context: Context) {
             val intent = Intent(context, VpnDnsService::class.java).apply {
                 action = ACTION_STOP_VPN
+            }
+            context.startService(intent)
+        }
+        
+        fun softRestartVpn(context: Context) {
+            val intent = Intent(context, VpnDnsService::class.java).apply {
+                action = ACTION_SOFT_RESTART
             }
             context.startService(intent)
         }
@@ -73,8 +78,14 @@ class VpnDnsService : VpnService() {
     private val coroutineScope = CoroutineScope(Dispatchers.IO)
     private var currentDnsType = "A"
     
+    // Restart stability
+    private val isRestarting = AtomicBoolean(false)
+    private val restartCount = AtomicInteger(0)
+    private val MAX_RESTARTS_PER_MINUTE = 3
+    private val handler = Handler(Looper.getMainLooper())
+    
     /**
-     * GET DNS SERVERS berdasarkan type (sama dengan original)
+     * GET DNS SERVERS berdasarkan type
      */
     private fun getDnsServers(type: String): List<String> {
         return when (type.uppercase()) {
@@ -87,12 +98,11 @@ class VpnDnsService : VpnService() {
     }
     
     /**
-     * SETUP DNS-ONLY VPN (Realme C3 Android 10 compatible)
-     * MODIFIED: Terima DNS type sebagai parameter
+     * SETUP DNS-ONLY VPN
      */
     private fun setupDnsOnlyVpn(dnsType: String): Boolean {
         return try {
-            LogUtil.d(TAG, "Setting up DNS-only VPN for Realme C3, DNS Type: $dnsType")
+            LogUtil.d(TAG, "Setting up DNS-only VPN, DNS Type: $dnsType")
             currentDnsType = dnsType
             
             val dnsServers = getDnsServers(dnsType)
@@ -103,53 +113,46 @@ class VpnDnsService : VpnService() {
                 .setMtu(1280)
                 .setBlocking(true)
             
-            // 🔥 REALME C3 TRICK: SYSTEM APPS BOLEH BYPASS DNS KITA
+            // System apps boleh bypass DNS kita
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 try {
-                    // SystemUI - biar guna DNS default (elak detection)
                     builder.addDisallowedApplication("com.android.systemui")
-                    // Settings app
                     builder.addDisallowedApplication("com.android.settings")
-                    // Phone/Dialer
                     builder.addDisallowedApplication("com.android.dialer")
-                    LogUtil.d(TAG, "✅ System apps disallowed (Realme stealth mode)")
+                    LogUtil.d(TAG, "✅ System apps disallowed")
                 } catch (e: Exception) {
                     LogUtil.w(TAG, "⚠️ Cannot disallow system apps: ${e.message}")
                 }
             }
             
-            // 🔥 TRICK 1: SET DNS SERVERS (Android akan forward ke VPN)
+            // Set DNS servers
             dnsServers.take(2).forEach { dns ->
                 builder.addDnsServer(dns)
             }
             
-            // 🔥 TRICK 2: ROUTE KE DNS SERVERS SAHAJA (Realme allow)
-            // Route ke selected DNS servers
+            // Route ke DNS servers
             dnsServers.take(2).forEach { dns ->
-                if (dns.contains('.')) { // IPv4 only
+                if (dns.contains('.')) {
                     builder.addRoute(dns, 32)
                 }
             }
             
-            // 🔥 TRICK 3: ROUTE KE TELCO DNS (untuk intercept)
+            // Route ke Telco DNS
             builder.addRoute("203.82.91.14", 32)
             builder.addRoute("203.82.91.30", 32)
             
-            // 🔥 TRICK 4: ROUTE KE POPULAR SERVICES (optional)
-            builder.addRoute("142.250.0.0", 16)  // Google
-            builder.addRoute("13.0.0.0", 8)      // AWS
-            builder.addRoute("34.0.0.0", 8)      // Google Cloud
-            
-            // 🔥 TRICK 5: NO DEFAULT ROUTE (Realme block)
-            // JANGAN guna: builder.addRoute("0.0.0.0", 0)
+            // Route ke popular services
+            builder.addRoute("142.250.0.0", 16)
+            builder.addRoute("13.0.0.0", 8)
+            builder.addRoute("34.0.0.0", 8)
             
             // Establish VPN
             val fd = builder.establish()
             if (fd != null) {
                 vpnInterface = fd
-                LogUtil.d(TAG, "✅ VPN established successfully dengan DNS: ${dnsServers.first()}")
+                LogUtil.d(TAG, "✅ VPN established dengan DNS: ${dnsServers.first()}")
                 
-                // 🔥 TRICK 6: START DNS PROXY (local port 5353)
+                // Start DNS proxy
                 coroutineScope.launch {
                     startDnsProxy(dnsServers)
                 }
@@ -167,24 +170,41 @@ class VpnDnsService : VpnService() {
     }
     
     /**
-     * DNS PROXY - Handle DNS queries from VPN
-     * MODIFIED: Terima DNS servers list
+     * DNS PROXY dengan STABILITY IMPROVEMENTS
      */
     private fun startDnsProxy(dnsServers: List<String>) {
+        // Check jika sedang restart
+        if (isRestarting.get()) {
+            LogUtil.w(TAG, "⚠️ Skipping DNS start - restart in progress")
+            return
+        }
+        
         LogUtil.d(TAG, "Starting DNS proxy dengan servers: $dnsServers")
         
         try {
-            // Close existing socket
+            // Graceful cleanup sebelum start baru
+            dnsProxyThread?.let { thread ->
+                if (thread.isAlive) {
+                    thread.interrupt()
+                    try {
+                        thread.join(500)
+                    } catch (e: Exception) {
+                        LogUtil.w(TAG, "Thread join interrupted")
+                    }
+                }
+            }
+            
             dnsProxySocket?.close()
-            dnsProxyThread?.interrupt()
+            
+            Thread.sleep(100) // Small delay untuk cleanup
             
             var socket: DatagramSocket? = null
             var selectedPort = -1
             
-            // CUBE SETIAP PORT DALAM STRATEGY
+            // Cuba setiap port dalam strategy
             for (port in PORT_STRATEGY) {
                 try {
-                    // Try release port (non-root attempt)
+                    // Try release port
                     try {
                         Runtime.getRuntime().exec(arrayOf(
                             "sh", "-c", 
@@ -193,18 +213,18 @@ class VpnDnsService : VpnService() {
                         ))
                         Thread.sleep(50)
                     } catch (e: Exception) {
-                        // Ignore for non-root
+                        // Ignore untuk non-root
                     }
                     
                     // Cuba bind ke port
                     socket = DatagramSocket(null).apply {
                         reuseAddress = true
-                        soTimeout = 5000
+                        soTimeout = 0  // 🔥 NO TIMEOUT - BLOCK FOREVER
                         bind(java.net.InetSocketAddress(port))
                     }
                     
                     selectedPort = port
-                    LogUtil.d(TAG, "✅ Acquired port $port for DNS proxy")
+                    LogUtil.d(TAG, "✅ Acquired port $port")
                     break
                     
                 } catch (e: java.net.SocketException) {
@@ -220,61 +240,60 @@ class VpnDnsService : VpnService() {
             }
             
             if (selectedPort == -1) {
-                LogUtil.e(TAG, "💥 All ports blocked! Cannot start DNS proxy")
+                LogUtil.e(TAG, "💥 All ports blocked!")
                 return
             }
             
             dnsProxySocket = socket
             
-            // Start proxy thread (SAMA SEPERTI ASAL)
+            // Start proxy thread dengan STABILITY FIXES
             dnsProxyThread = Thread {
-                var consecutiveErrors = 0
-                val maxErrors = 5
+                LogUtil.d(TAG, "🔁 DNS Proxy thread STARTED on port $selectedPort")
                 
-                while (!Thread.currentThread().isInterrupted && isRunning.get()) {
-                    try {
-                        // Receive DNS query
-                        val buffer = ByteArray(512)
-                        val packet = DatagramPacket(buffer, buffer.size)
-                        dnsProxySocket!!.receive(packet)
-                        
-                        consecutiveErrors = 0
-                        
-                        // Process query in background
-                        executor.submit {
-                            handleDnsQuery(packet, dnsServers)
-                        }
-                        
-                    } catch (e: java.net.SocketTimeoutException) {
-                        // Timeout is normal
-                        continue
-                    } catch (e: Exception) {
-                        consecutiveErrors++
-                        LogUtil.w(TAG, "DNS Proxy error #$consecutiveErrors: ${e.message}")
-                        
-                        if (consecutiveErrors >= maxErrors) {
-                            LogUtil.e(TAG, "🚨 Too many errors, restarting proxy...")
-                            restartDnsProxy(dnsServers)
-                            break
+                try {
+                    while (!Thread.currentThread().isInterrupted && isRunning.get()) {
+                        try {
+                            // Receive DNS query - BLOCK FOREVER (soTimeout = 0)
+                            val buffer = ByteArray(512)
+                            val packet = DatagramPacket(buffer, buffer.size)
+                            dnsProxySocket!!.receive(packet)
+                            
+                            // Process query
+                            executor.submit {
+                                handleDnsQuery(packet, dnsServers)
+                            }
+                            
+                        } catch (e: java.net.SocketTimeoutException) {
+                            // Tidak akan terjadi kerana soTimeout = 0
+                            continue
+                        } catch (e: Exception) {
+                            if (isRunning.get() && !Thread.currentThread().isInterrupted) {
+                                LogUtil.w(TAG, "DNS Proxy error: ${e.message}")
+                                // Continue loop - jangan crash
+                            }
                         }
                     }
+                } finally {
+                    LogUtil.d(TAG, "🔴 DNS Proxy thread EXITING. " +
+                                  "Interrupted: ${Thread.currentThread().isInterrupted}, " +
+                                  "isRunning: ${isRunning.get()}")
                 }
-                
-                LogUtil.d(TAG, "DNS Proxy thread stopped")
             }
             
             dnsProxyThread!!.priority = Thread.MAX_PRIORITY
+            dnsProxyThread!!.name = "DNS-Proxy-$selectedPort"
             dnsProxyThread!!.start()
             
-            LogUtil.d(TAG, "✅ DNS Proxy started successfully on port $selectedPort")
+            LogUtil.d(TAG, "✅ DNS Proxy started successfully")
             
         } catch (e: Exception) {
             LogUtil.e(TAG, "💥 Failed to start DNS proxy: ${e.message}")
             
-            // Retry after delay (SAMA SEPERTI ASAL)
+            // Retry dengan exponential backoff
             coroutineScope.launch {
-                kotlinx.coroutines.delay(3000)
-                if (isRunning.get()) {
+                delay(3000)
+                if (isRunning.get() && !isRestarting.get()) {
+                    LogUtil.d(TAG, "🔄 Retrying DNS proxy...")
                     startDnsProxy(dnsServers)
                 }
             }
@@ -282,36 +301,33 @@ class VpnDnsService : VpnService() {
     }
     
     /**
-     * HANDLE DNS QUERY - Forward to DNS servers
-     * MODIFIED: Terima DNS servers list
+     * HANDLE DNS QUERY
      */
     private fun handleDnsQuery(queryPacket: DatagramPacket, dnsServers: List<String>) {
         var socket: DatagramSocket? = null
         
         try {
-            // Extract query info
             val clientIp = queryPacket.address.hostAddress
             val clientPort = queryPacket.port
             val queryData = queryPacket.data.copyOf(queryPacket.length)
             
-            // Try decode DNS ID for logging
+            // Decode DNS ID
             val queryId = if (queryData.size >= 2) {
                 ((queryData[0].toInt() and 0xFF) shl 8) or (queryData[1].toInt() and 0xFF)
             } else 0
             
             LogUtil.d(TAG, "📡 DNS Query #$queryId from $clientIp:$clientPort")
             
-            // 🔥 TRICK: Gunakan protect() supaya DNS query tak loop ke VPN
+            // Gunakan protect() untuk elak loop
             val dnsSocket = DatagramSocket()
             protect(dnsSocket)
             
-            // 🔥 DUAL DNS STRATEGY: Cuba semua DNS servers
+            // Cuba semua DNS servers
             var success = false
-            val filteredServers = dnsServers.filter { it.contains('.') } // IPv4 sahaja
+            val filteredServers = dnsServers.filter { it.contains('.') }
             
             for (dnsServer in filteredServers) {
                 try {
-                    // Send to DNS server
                     val forwardPacket = DatagramPacket(
                         queryData,
                         queryData.size,
@@ -322,12 +338,10 @@ class VpnDnsService : VpnService() {
                     dnsSocket.soTimeout = 3000
                     dnsSocket.send(forwardPacket)
                     
-                    // Receive response
                     val responseBuffer = ByteArray(512)
                     val responsePacket = DatagramPacket(responseBuffer, responseBuffer.size)
                     dnsSocket.receive(responsePacket)
                     
-                    // Send back to client
                     val replyPacket = DatagramPacket(
                         responsePacket.data,
                         responsePacket.length,
@@ -351,7 +365,6 @@ class VpnDnsService : VpnService() {
             }
             
             if (!success) {
-                // Fallback ke public DNS
                 tryFallbackDns(queryPacket, dnsSocket)
             }
             
@@ -365,7 +378,7 @@ class VpnDnsService : VpnService() {
     }
     
     /**
-     * FALLBACK DNS jika semua gagal
+     * FALLBACK DNS
      */
     private fun tryFallbackDns(queryPacket: DatagramPacket, dnsSocket: DatagramSocket) {
         val fallbackServers = listOf("1.1.1.1", "8.8.8.8", "9.9.9.9")
@@ -403,35 +416,103 @@ class VpnDnsService : VpnService() {
             }
         }
         
-        LogUtil.e(TAG, "💥 All DNS servers (including fallback) failed")
+        LogUtil.e(TAG, "💥 All DNS servers failed")
     }
     
     /**
-     * RESTART DNS PROXY jika crash
+     * SOFT RESTART - Untuk DAJ sequence
      */
-    private fun restartDnsProxy(dnsServers: List<String>) {
+    private fun performSoftRestart() {
+        if (isRestarting.get()) {
+            LogUtil.d(TAG, "⚠️ Restart already in progress, skipping...")
+            return
+        }
+        
+        val currentCount = restartCount.getAndIncrement()
+        if (currentCount >= MAX_RESTARTS_PER_MINUTE) {
+            LogUtil.w(TAG, "🚨 Max restarts per minute reached ($MAX_RESTARTS_PER_MINUTE)")
+            restartCount.decrementAndGet()
+            return
+        }
+        
+        isRestarting.set(true)
+        
+        LogUtil.d(TAG, "🔄 Performing SOFT RESTART #${currentCount + 1}")
+        
         coroutineScope.launch {
-            LogUtil.d(TAG, "Restarting DNS proxy...")
-            
-            dnsProxyThread?.interrupt()
-            dnsProxySocket?.close()
-            
-            kotlinx.coroutines.delay(1000)
-            
-            if (isRunning.get()) {
-                startDnsProxy(dnsServers)
+            try {
+                // Graceful shutdown DNS proxy
+                dnsProxyThread?.let { thread ->
+                    if (thread.isAlive) {
+                        thread.interrupt()
+                        withTimeout(2000) {
+                            try {
+                                thread.join()
+                            } catch (e: Exception) {
+                                LogUtil.w(TAG, "Thread join timeout")
+                            }
+                        }
+                    }
+                }
+                
+                // Close socket
+                dnsProxySocket?.close()
+                dnsProxySocket = null
+                dnsProxyThread = null
+                
+                // Small delay
+                delay(500)
+                
+                // Restart DNS proxy jika VPN masih running
+                if (isRunning.get() && vpnInterface != null) {
+                    val dnsServers = getDnsServers(currentDnsType)
+                    startDnsProxy(dnsServers)
+                    updateNotification("Soft-restarted")
+                    LogUtil.d(TAG, "✅ DNS Proxy soft-restarted successfully")
+                } else {
+                    LogUtil.w(TAG, "⚠️ VPN not running, cannot restart DNS proxy")
+                }
+                
+            } catch (e: Exception) {
+                LogUtil.e(TAG, "💥 Soft restart failed: ${e.message}")
+            } finally {
+                isRestarting.set(false)
+                
+                // Reset restart counter after 1 minute
+                handler.postDelayed({
+                    restartCount.set(0)
+                    LogUtil.d(TAG, "🔄 Restart counter reset")
+                }, 60000)
             }
         }
     }
     
     /**
-     * SHOW NOTIFICATION (Foreground service required)
+     * UPDATE NOTIFICATION
+     */
+    private fun updateNotification(status: String) {
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) 
+            as NotificationManager
+        
+        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("🛡️ CedokDNS ($status)")
+            .setContentText("DNS: $currentDns | Restarts: ${restartCount.get()}")
+            .setSmallIcon(android.R.drawable.ic_lock_lock)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .build()
+        
+        notificationManager.notify(NOTIFICATION_ID, notification)
+    }
+    
+    /**
+     * SHOW NOTIFICATION
      */
     private fun showNotification() {
         val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) 
             as NotificationManager
         
-        // Create notification channel (Android 8.0+)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
@@ -444,7 +525,6 @@ class VpnDnsService : VpnService() {
             notificationManager.createNotificationChannel(channel)
         }
         
-        // Intent untuk buka app
         val intent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
         }
@@ -454,7 +534,6 @@ class VpnDnsService : VpnService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         
-        // Stop action
         val stopIntent = Intent(this, VpnDnsService::class.java).apply {
             action = ACTION_STOP_VPN
         }
@@ -463,7 +542,6 @@ class VpnDnsService : VpnService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
         
-        // Build notification
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("🛡️ CedokDNS Active")
             .setContentText("DNS: $currentDns | Type: $currentDnsType")
@@ -496,31 +574,27 @@ class VpnDnsService : VpnService() {
         
         LogUtil.d(TAG, "Starting VPN service...")
         
-        // Request VPN permission jika belum
-        val intent = VpnService.prepare(this)
-        if (intent != null) {
+        val prepareIntent = VpnService.prepare(this)
+        if (prepareIntent != null) {
             LogUtil.e(TAG, "VPN permission not granted")
             stopSelf()
             return
         }
         
-        // Ambil DNS type dari intent (untuk AppCoreEngService)
         val dnsType = intent?.getStringExtra(EXTRA_DNS_TYPE) ?: "A"
         
-        // Setup VPN
         val success = setupDnsOnlyVpn(dnsType)
         if (success) {
             isRunning.set(true)
             showNotification()
             
-            // Broadcast status
             sendBroadcast(Intent("DNS_VPN_STATUS").apply {
                 putExtra("status", "ACTIVE")
                 putExtra("dns_type", dnsType)
                 putExtra("current_dns", currentDns)
             })
             
-            LogUtil.d(TAG, "✅ VPN started successfully dengan DNS type: $dnsType")
+            LogUtil.d(TAG, "✅ VPN started dengan DNS type: $dnsType")
         } else {
             LogUtil.e(TAG, "❌ Failed to start VPN")
             stopSelf()
@@ -538,22 +612,28 @@ class VpnDnsService : VpnService() {
         
         LogUtil.d(TAG, "Stopping VPN service...")
         
-        // Signal stop
         isRunning.set(false)
+        isRestarting.set(false) // Reset restart flag
         
-        // Stop DNS proxy
-        dnsProxyThread?.interrupt()
+        // Graceful shutdown
+        dnsProxyThread?.let { thread ->
+            if (thread.isAlive) {
+                thread.interrupt()
+                try {
+                    thread.join(1000)
+                } catch (e: Exception) {
+                    LogUtil.w(TAG, "Thread join interrupted")
+                }
+            }
+        }
+        
         dnsProxySocket?.close()
         executor.shutdownNow()
-        
-        // Close VPN interface
         vpnInterface?.close()
         vpnInterface = null
         
-        // Stop foreground service
         stopForeground(true)
         
-        // Broadcast status
         sendBroadcast(Intent("DNS_VPN_STATUS").apply {
             putExtra("status", "STOPPED")
             putExtra("dns_type", currentDnsType)
@@ -570,6 +650,7 @@ class VpnDnsService : VpnService() {
         when (intent?.action) {
             ACTION_START_VPN -> startVpnService()
             ACTION_STOP_VPN -> stopVpnService()
+            ACTION_SOFT_RESTART -> performSoftRestart()
             else -> stopSelf()
         }
         return START_STICKY

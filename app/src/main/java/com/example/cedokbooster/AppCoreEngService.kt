@@ -125,19 +125,27 @@ class AppCoreEngService : Service() {
             if (intent.action == "RESTART_CORE_ENGINE") {
                 Log.d(TAG, "RESTART_CORE_ENGINE received - SMART RESTART")
                 
-                // SMART RESTART: Stop-start CoreEngine TAPI soft-restart VPN
-                stopCoreEngine()
-                
+                // SMART RESTART: Jangan stop CoreEngine, cuma trigger soft restart VPN
                 handler.postDelayed({
-                    startCoreEngine()
-                    
-                    // SOFT RESTART VPN (tanpa stop-start)
-                    handler.postDelayed({
+                    // Soft restart VPN sahaja
+                    try {
                         VpnDnsService.softRestartVpn(this@AppCoreEngService)
-                        Log.d(TAG, "VPN soft restart triggered")
-                    }, 500)
-                    
-                }, 1000)
+                        Log.d(TAG, "✅ VPN soft restart triggered")
+                        
+                        // Refresh network conditioning
+                        stopNetworkConditioning()
+                        handler.postDelayed({
+                            startNetworkConditioning()
+                            Log.d(TAG, "Network conditioning restarted")
+                        }, 500)
+                        
+                        // Update notification
+                        broadcastStatus()
+                        
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to soft restart VPN: ${e.message}")
+                    }
+                }, 500)
             }
         }
     }

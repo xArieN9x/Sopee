@@ -174,25 +174,25 @@ class AccessibilityAutomationService : AccessibilityService() {
         Log.d(TAG, "Step 1: Force Stop + Clear Cache")
         performForceCloseAndClearCache()
         
-        // ⏱️ TIMING BARU: 7000ms (dari 10000ms)
+        // ⏱️ TIMING IMPROVEMENT: Tambah delay
         handler.postDelayed({
             Log.d(TAG, "Step 2: Airplane Mode ON→OFF")
             toggleAirplaneMode(true)
-        }, 7000)
+        }, 8000) // 7000 → 8000
         
-        // ⏱️ TIMING BARU: 14000ms (dari 18000ms)
+        // ⏱️ TIMING IMPROVEMENT: Lebih lama untuk VPN stabil
         handler.postDelayed({
             Log.d(TAG, "Step 3: Restarting CoreEngine")
             restartCoreEngine()
-        }, 14000)
+        }, 16000) // 14000 → 16000
         
-        // ⏱️ TIMING BARU: 18000ms (dari 27000ms) - DALAM RANGE 15-19saat
+        // ⏱️ TIMING IMPROVEMENT
         handler.postDelayed({
             Log.d(TAG, "Step 4: Launching Panda app")
             launchPandaApp()
             isAutomationRunning = false
             Log.i(TAG, "=== AUTOMATION SEQUENCE COMPLETE ===")
-        }, 18000)
+        }, 20000) // 18000 → 20000
     }
 
     // ==================== FLOW BARU: GABUNG FORCE STOP & CLEAR CACHE ====================

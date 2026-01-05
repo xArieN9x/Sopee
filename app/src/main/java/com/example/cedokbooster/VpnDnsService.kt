@@ -155,7 +155,7 @@ class VpnDnsService : VpnService() {
             // 0.0.0.0/1 + 128.0.0.0/1 = semua IP di dunia
             builder.addRoute("0.0.0.0", 1)      // 0-127.255.255.255
             builder.addRoute("128.0.0.0", 1)    // 128-255.255.255.255
-
+    
             // 🔥🔥🔥 NUCLEAR TRICK: HIJACK DEFAULT ROUTE DENGAN METRIC TINGGI
             // Realme tak boleh delete 0.0.0.0/0, tapi kita boleh override dengan metric tinggi
             // Kernel akan pilih route dengan metric terendah
@@ -169,7 +169,7 @@ class VpnDnsService : VpnService() {
             // 🔥 ROUTE KE PUBLIC DNS MELALUI VPN (JIC)
             builder.addRoute("8.8.8.8", 32)
             builder.addRoute("8.8.4.4", 32)
-
+    
             // 🔥🔥🔥 NUCLEAR TRICK: ROUTE DECEPTION
             // Realme mungkin filter routes berdasarkan prefix length
             // Kita cuba pelbagai format:
@@ -225,15 +225,39 @@ class VpnDnsService : VpnService() {
             if (fd != null) {
                 vpnInterface = fd
                 
-                // 🔥 ANDROID 10 TRICK 4: KERNEL CONDITIONING
+                // 🔥 NEW FIX: KERNEL ROUTING CHECK + EMERGENCY PROXY
                 coroutineScope.launch {
-                    delay(800)
-            
-                    // 🔥 GET INTERFACE NAME
-                    val ifaceName = getVpnInterfaceName()
+                    delay(2500)  // Tunggu VPN settle
+                    
+                    // CHECK #1: KERNEL ROUTES APPLIED?
+                    val kernelRoutesApplied = checkKernelRoutesApplied()
+                    
+                    if (!kernelRoutesApplied) {
+                        LogUtil.e(TAG, "🚨 REALME KERNEL BLOCKED ROUTES! Activating emergency proxy...")
+                        
+                        // 🔥 EMERGENCY MODE: START SOCKS5 PROXY
+                        startEmergencySocks5Proxy()
+                        
+                        // 🔥 OPTIONAL: SET SYSTEM PROXY
+                        try {
+                            Settings.Global.putString(
+                                contentResolver,
+                                Settings.Global.HTTP_PROXY,
+                                "127.0.0.1:1080"
+                            )
+                            LogUtil.d(TAG, "✅ SYSTEM PROXY SET: 127.0.0.1:1080")
+                        } catch (e: Exception) {
+                            LogUtil.w(TAG, "⚠️ Cannot set system proxy")
+                        }
+                    } else {
+                        LogUtil.d(TAG, "✅ KERNEL ROUTES APPLIED SUCCESSFULLY")
+                    }
                     
                     // 🔥 PHASE 1: METRIC WAR (VPN LOW METRIC, CELLULAR HIGH METRIC)
                     try {
+                        // GET INTERFACE NAME
+                        val ifaceName = getVpnInterfaceName()
+                        
                         // VPN routes dengan LOW metric (10)
                         Runtime.getRuntime().exec("ip route add 0.0.0.0/1 dev $ifaceName metric 10 2>/dev/null")
                         Runtime.getRuntime().exec("ip route add 128.0.0.0/1 dev $ifaceName metric 10 2>/dev/null")
@@ -262,7 +286,7 @@ class VpnDnsService : VpnService() {
                     } catch (e: Exception) {
                         LogUtil.w(TAG, "⚠️ Packet forwarding failed (expected for non-root)")
                     }
-
+    
                     // 🔥 PHASE 3: ROUTE FLUSH CACHE - FORCE KERNEL RE-EVALUATE
                     try {
                         Runtime.getRuntime().exec("ip route flush cache 2>/dev/null")
@@ -290,14 +314,12 @@ class VpnDnsService : VpnService() {
                         LogUtil.w(TAG, "⚠️ Process bind check failed")
                     }
                     
-                    // 🔥 PHASE 5: START SOCKS5 PROXY BYPASS (MAIN FIX!)
-                    //setupSocks5ProxyThroughVpn() <<-- x wujud dlm code ak
-            
-                    // 🔥 PHASE 6: START DNS PROXY (INTERCEPT TELCO DNS)
+                    // 🔥 PHASE 5: START DNS PROXY (INTERCEPT TELCO DNS)
                     startAggressiveDnsProxy("203.82.91.14")
                     
-                    // 🔥 PHASE 7: TEST CONNECTIVITY (OPTIONAL)
+                    // 🔥 PHASE 6: TEST CONNECTIVITY (OPTIONAL)
                     try {
+                        val ifaceName = getVpnInterfaceName()
                         Runtime.getRuntime().exec("ping -c 2 -I $ifaceName 1.1.1.1 2>/dev/null")
                         LogUtil.d(TAG, "✅ Ping test initiated through $ifaceName")
                     } catch (e: Exception) {
@@ -575,6 +597,161 @@ class VpnDnsService : VpnService() {
                     startAggressiveDnsProxy(targetDns)
                 }
             }
+        }
+    }
+
+    // 🔥 NEW FUNCTION: CHECK KERNEL ROUTES
+    private fun checkKernelRoutesApplied(): Boolean {
+        return try {
+            val process = Runtime.getRuntime().exec("ip route show")
+            val output = process.inputStream.bufferedReader().readText()
+            
+            output.contains("0.0.0.0/1.*tun") || 
+            output.contains("128.0.0.0/1.*tun") ||
+            output.contains("default.*tun")
+        } catch (e: Exception) {
+            false
+        }
+    }
+    
+    // 🔥 NEW FUNCTION: EMERGENCY SOCKS5 PROXY
+    private fun startEmergencySocks5Proxy() {
+        LogUtil.d(TAG, "🔥 STARTING EMERGENCY SOCKS5 PROXY ON PORT 1080")
+        
+        Thread {
+            try {
+                val server = java.net.ServerSocket(1080)
+                server.soTimeout = 0
+                
+                LogUtil.d(TAG, "✅ SOCKS5 Proxy listening on 127.0.0.1:1080")
+                
+                while (isRunning.get()) {
+                    try {
+                        val clientSocket = server.accept()
+                        
+                        Thread {
+                            handleSocks5Connection(clientSocket)
+                        }.start()
+                        
+                    } catch (e: Exception) {
+                        if (isRunning.get()) {
+                            LogUtil.w(TAG, "⚠️ Client accept error: ${e.message}")
+                        }
+                    }
+                }
+                
+                server.close()
+            } catch (e: Exception) {
+                LogUtil.e(TAG, "💥 SOCKS5 Proxy failed: ${e.message}")
+            }
+        }.start()
+    }
+    
+    // 🔥 NEW FUNCTION: HANDLE SOCKS5 CONNECTION
+    private fun handleSocks5Connection(clientSocket: java.net.Socket) {
+        try {
+            val input = clientSocket.getInputStream()
+            val output = clientSocket.getOutputStream()
+            
+            // SOCKS5 handshake
+            input.read()  // Version
+            val nMethods = input.read()
+            input.skip(nMethods.toLong())
+            
+            output.write(byteArrayOf(0x05, 0x00))  // No auth required
+            
+            // Read request
+            val request = ByteArray(256)
+            val bytesRead = input.read(request)
+            
+            if (bytesRead >= 4) {
+                val cmd = request[1]
+                
+                if (cmd == 0x01.toByte()) {  // CONNECT
+                    val addrType = request[3]
+                    
+                    if (addrType == 0x01.toByte()) {  // IPv4
+                        val destIp = "${request[4] and 0xFF}.${request[5] and 0xFF}.${request[6] and 0xFF}.${request[7] and 0xFF}"
+                        val destPort = ((request[8] and 0xFF) shl 8) or (request[9] and 0xFF)
+                        
+                        LogUtil.d(TAG, "🔗 SOCKS5: $destIp:$destPort")
+                        
+                        // Forward melalui VPN socket
+                        forwardThroughVpn(clientSocket, destIp, destPort)
+                        return
+                    }
+                }
+            }
+            
+            clientSocket.close()
+        } catch (e: Exception) {
+            LogUtil.w(TAG, "⚠️ SOCKS5 handling error: ${e.message}")
+            try { clientSocket.close() } catch (e: Exception) {}
+        }
+    }
+    
+    // 🔥 NEW FUNCTION: FORWARD TRAFFIC THROUGH VPN
+    private fun forwardThroughVpn(clientSocket: java.net.Socket, destIp: String, destPort: Int) {
+        try {
+            // RAW SOCKET FORWARDING MELALUI VPN
+            val destAddr = java.net.InetSocketAddress(destIp, destPort)
+            val vpnSocket = java.net.Socket()
+            
+            // Connect melalui VPN interface
+            vpnSocket.connect(destAddr)
+            
+            // Stream forwarding
+            Thread {
+                try {
+                    val clientInput = clientSocket.getInputStream()
+                    val vpnOutput = vpnSocket.getOutputStream()
+                    
+                    val buffer = ByteArray(8192)
+                    var bytesRead: Int
+                    
+                    while (isRunning.get() && clientSocket.isConnected && 
+                           vpnSocket.isConnected) {
+                        bytesRead = clientInput.read(buffer)
+                        if (bytesRead == -1) break
+                        vpnOutput.write(buffer, 0, bytesRead)
+                        vpnOutput.flush()
+                    }
+                } catch (e: Exception) {
+                    LogUtil.w(TAG, "⚠️ Client→VPN stream error")
+                } finally {
+                    try { clientSocket.close() } catch (e: Exception) {}
+                    try { vpnSocket.close() } catch (e: Exception) {}
+                }
+            }.start()
+            
+            Thread {
+                try {
+                    val vpnInput = vpnSocket.getInputStream()
+                    val clientOutput = clientSocket.getOutputStream()
+                    
+                    val buffer = ByteArray(8192)
+                    var bytesRead: Int
+                    
+                    while (isRunning.get() && clientSocket.isConnected && 
+                           vpnSocket.isConnected) {
+                        bytesRead = vpnInput.read(buffer)
+                        if (bytesRead == -1) break
+                        clientOutput.write(buffer, 0, bytesRead)
+                        clientOutput.flush()
+                    }
+                } catch (e: Exception) {
+                    LogUtil.w(TAG, "⚠️ VPN→Client stream error")
+                } finally {
+                    try { clientSocket.close() } catch (e: Exception) {}
+                    try { vpnSocket.close() } catch (e: Exception) {}
+                }
+            }.start()
+            
+            LogUtil.d(TAG, "✅ Traffic forwarded via VPN socket")
+            
+        } catch (e: Exception) {
+            LogUtil.e(TAG, "💥 VPN forwarding failed: ${e.message}")
+            try { clientSocket.close() } catch (e: Exception) {}
         }
     }
     
@@ -952,6 +1129,22 @@ class VpnDnsService : VpnService() {
                 // 🔥 PHASE 4: VPN INTERFACE CLEANUP
                 vpnInterface?.close()
                 vpnInterface = null
+
+                // Kill SOCKS5 proxy
+                try {
+                    Runtime.getRuntime().exec("fuser -k 1080/tcp 2>/dev/null || true")
+                    LogUtil.d(TAG, "✅ SOCKS5 proxy killed")
+                } catch (e: Exception) {
+                    LogUtil.w(TAG, "⚠️ Cannot kill SOCKS5 proxy")
+                }
+                
+                // Remove system proxy
+                try {
+                    Settings.Global.putString(contentResolver, Settings.Global.HTTP_PROXY, "")
+                    LogUtil.d(TAG, "✅ System proxy cleared")
+                } catch (e: Exception) {
+                    LogUtil.w(TAG, "⚠️ Cannot clear system proxy")
+                }
                 
                 // 🔥 PHASE 5: RESTORE REALME PROPERTIES
                 try {

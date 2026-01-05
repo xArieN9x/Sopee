@@ -320,8 +320,19 @@ class AppCoreEngService : Service() {
                     // A2: Mix protocols - Sometimes QUIC, sometimes HTTP
                     if (cycle % 3 == 0 && quicSocket.isConnected) {
                         // QUIC-like UDP keep-alive
-                        quicSocket.send("PING/${System.currentTimeMillis()}".toByteArray())
-                        Log.d(TAG, "QUIC keep-alive sent to 8.8.8.8:443")
+                        try {
+                            val pingData = "PING/${System.currentTimeMillis()}".toByteArray()
+                            val pingPacket = DatagramPacket(
+                                pingData,
+                                pingData.size,
+                                InetAddress.getByName("8.8.8.8"),  // Destination
+                                443                                // Port
+                            )
+                            quicSocket.send(pingPacket)
+                            Log.d(TAG, "QUIC keep-alive sent to 8.8.8.8:443")
+                        } catch (e: Exception) {
+                            Log.w(TAG, "QUIC keep-alive failed: ${e.message}")
+                        }
                     }
                     
                     // VARIABLE REQUEST TYPES

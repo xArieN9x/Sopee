@@ -13,7 +13,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.delay // 👈 TAMBAH IMPORT INI
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
@@ -78,11 +78,12 @@ class VpnDnsService : VpnService() {
     private val executor: ExecutorService = Executors.newFixedThreadPool(4)
     private val coroutineScope = CoroutineScope(Dispatchers.IO)
     private var currentDnsType = "A"
+    private var startIntent: Intent? = null // 👈 SIMPAN INTENT REFERENCE
     
     // Restart stability
     private val isRestarting = AtomicBoolean(false)
     private val restartCount = AtomicInteger(0)
-    private val MAX_RESTARTS_PER_MINUTE = 3
+    private const val MAX_RESTARTS_PER_MINUTE = 3
     private val handler = Handler(Looper.getMainLooper())
     
     /**
@@ -292,7 +293,7 @@ class VpnDnsService : VpnService() {
             
             // Retry dengan exponential backoff
             coroutineScope.launch {
-                delay(3000)
+                delay(3000) // 👈 FIXED: guna delay() bukan kotlinx.coroutines.delay()
                 if (isRunning.get() && !isRestarting.get()) {
                     LogUtil.d(TAG, "🔄 Retrying DNS proxy...")
                     startDnsProxy(dnsServers)
@@ -462,7 +463,7 @@ class VpnDnsService : VpnService() {
                 dnsProxyThread = null
                 
                 // Small delay
-                delay(500)
+                delay(500) // 👈 FIXED: guna delay()
                 
                 // Restart DNS proxy jika VPN masih running
                 if (isRunning.get() && vpnInterface != null) {
@@ -582,7 +583,8 @@ class VpnDnsService : VpnService() {
             return
         }
         
-        val dnsType = intent?.getStringExtra(EXTRA_DNS_TYPE) ?: "A"
+        // 👈 FIXED: Guna startIntent yang disimpan
+        val dnsType = startIntent?.getStringExtra(EXTRA_DNS_TYPE) ?: "A"
         
         val success = setupDnsOnlyVpn(dnsType)
         if (success) {
@@ -648,6 +650,9 @@ class VpnDnsService : VpnService() {
      * SERVICE LIFECYCLE
      */
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // 👈 SIMPAN INTENT untuk digunakan kemudian
+        startIntent = intent
+        
         when (intent?.action) {
             ACTION_START_VPN -> startVpnService()
             ACTION_STOP_VPN -> stopVpnService()

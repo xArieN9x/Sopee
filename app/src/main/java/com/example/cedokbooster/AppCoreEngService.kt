@@ -22,6 +22,15 @@ import androidx.core.app.NotificationCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import kotlinx.coroutines.*
 
+import java.net.HttpURLConnection
+import java.net.URL
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
+import android.net.NetworkSpecifier
+import androidx.annotation.RequiresApi
+
 class AppCoreEngService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null

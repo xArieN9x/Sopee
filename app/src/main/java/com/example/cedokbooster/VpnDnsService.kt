@@ -671,8 +671,9 @@ class VpnDnsService : VpnService() {
                     val addrType = request[3]
                     
                     if (addrType == 0x01.toByte()) {  // IPv4
-                        val destIp = "${request[4] and 0xFF}.${request[5] and 0xFF}.${request[6] and 0xFF}.${request[7] and 0xFF}"
-                        val destPort = ((request[8] and 0xFF) shl 8) or (request[9] and 0xFF)
+                        // FIX: Convert Byte to Int before bitwise operation
+                        val destIp = "${request[4].toInt() and 0xFF}.${request[5].toInt() and 0xFF}.${request[6].toInt() and 0xFF}.${request[7].toInt() and 0xFF}"
+                        val destPort = ((request[8].toInt() and 0xFF) shl 8) or (request[9].toInt() and 0xFF)
                         
                         LogUtil.d(TAG, "🔗 SOCKS5: $destIp:$destPort")
                         

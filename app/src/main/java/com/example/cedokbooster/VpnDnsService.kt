@@ -27,7 +27,8 @@ class VpnDnsService : VpnService() {
         private const val TAG = "VpnDnsService"
         private const val NOTIFICATION_ID = 999
         private const val CHANNEL_ID = "vpn_dns_channel"
-        private const val DNS_PROXY_PORT = 5353
+        //private const val DNS_PROXY_PORT = 5353
+        private val PORT_STRATEGY = listOf(5353, 5354, 5355, 9999, 53535, 53536, 53537, 53538)
         private const val VPN_ADDRESS = "100.64.0.2"
         private const val VPN_PREFIX_LENGTH = 24
         
@@ -170,20 +171,62 @@ class VpnDnsService : VpnService() {
      * MODIFIED: Terima DNS servers list
      */
     private fun startDnsProxy(dnsServers: List<String>) {
-        LogUtil.d(TAG, "Starting DNS proxy on port $DNS_PROXY_PORT dengan servers: $dnsServers")
+        LogUtil.d(TAG, "Starting DNS proxy dengan servers: $dnsServers")
         
         try {
             // Close existing socket
             dnsProxySocket?.close()
             dnsProxyThread?.interrupt()
             
-            // Create UDP socket
-            dnsProxySocket = DatagramSocket(DNS_PROXY_PORT).apply {
-                reuseAddress = true
-                soTimeout = 5000
+            var socket: DatagramSocket? = null
+            var selectedPort = -1
+            
+            // CUBE SETIAP PORT DALAM STRATEGY
+            for (port in PORT_STRATEGY) {
+                try {
+                    // Try release port (non-root attempt)
+                    try {
+                        Runtime.getRuntime().exec(arrayOf(
+                            "sh", "-c", 
+                            "fuser -k $port/udp 2>/dev/null || true; " +
+                            "killall mdnsd 2>/dev/null || true"
+                        ))
+                        Thread.sleep(50)
+                    } catch (e: Exception) {
+                        // Ignore for non-root
+                    }
+                    
+                    // Cuba bind ke port
+                    socket = DatagramSocket(null).apply {
+                        reuseAddress = true
+                        soTimeout = 5000
+                        bind(java.net.InetSocketAddress(port))
+                    }
+                    
+                    selectedPort = port
+                    LogUtil.d(TAG, "✅ Acquired port $port for DNS proxy")
+                    break
+                    
+                } catch (e: java.net.SocketException) {
+                    if (e.message?.contains("EADDRINUSE") == true || 
+                        e.message?.contains("Address already in use") == true) {
+                        LogUtil.w(TAG, "🚨 Port $port occupied, trying next...")
+                        socket?.close()
+                        continue
+                    } else {
+                        throw e
+                    }
+                }
             }
             
-            // Start proxy thread
+            if (selectedPort == -1) {
+                LogUtil.e(TAG, "💥 All ports blocked! Cannot start DNS proxy")
+                return
+            }
+            
+            dnsProxySocket = socket
+            
+            // Start proxy thread (SAMA SEPERTI ASAL)
             dnsProxyThread = Thread {
                 var consecutiveErrors = 0
                 val maxErrors = 5
@@ -223,12 +266,12 @@ class VpnDnsService : VpnService() {
             dnsProxyThread!!.priority = Thread.MAX_PRIORITY
             dnsProxyThread!!.start()
             
-            LogUtil.d(TAG, "✅ DNS Proxy started successfully")
+            LogUtil.d(TAG, "✅ DNS Proxy started successfully on port $selectedPort")
             
         } catch (e: Exception) {
             LogUtil.e(TAG, "💥 Failed to start DNS proxy: ${e.message}")
             
-            // Retry after delay
+            // Retry after delay (SAMA SEPERTI ASAL)
             coroutineScope.launch {
                 kotlinx.coroutines.delay(3000)
                 if (isRunning.get()) {

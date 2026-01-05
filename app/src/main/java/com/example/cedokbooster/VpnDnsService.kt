@@ -241,7 +241,54 @@ class VpnDnsService : VpnService() {
                         
                         // 🔥 EMERGENCY MODE: START SOCKS5 PROXY
                         startEmergencySocks5Proxy()
-                        
+
+                        // 🔥 NUCLEAR ROUTE INJECTION TO KERNEL
+                        coroutineScope.launch {
+                            delay(3500)  // Tunggu proxy start
+                            
+                            val ifaceName = getVpnInterfaceName()  // akan dapat "tun1"
+                            LogUtil.d(TAG, "🔧 KERNEL ROUTE INJECTION for $ifaceName")
+                            
+                            // Inject routes langsung ke kernel (bypass Android framework)
+                            val routesToInject = listOf(
+                                "0.0.0.0/1 dev $ifaceName metric 50",
+                                "128.0.0.0/1 dev $ifaceName metric 50",
+                                "0.0.0.0/0 dev $ifaceName metric 60"
+                            )
+                            
+                            for (route in routesToInject) {
+                                try {
+                                    Runtime.getRuntime().exec(arrayOf("ip", "route", "add", route))
+                                    LogUtil.d(TAG, "✅ KERNEL ROUTE: $route")
+                                } catch (e: Exception) {
+                                    LogUtil.w(TAG, "⚠️ Failed: $route")
+                                }
+                                Thread.sleep(100)
+                            }
+                            
+                            // Delete competing routes
+                            try {
+                                Runtime.getRuntime().exec(arrayOf("ip", "route", "del", "default", "dev", "wlan0"))
+                                Runtime.getRuntime().exec(arrayOf("ip", "route", "del", "default", "dev", "ccmni0"))
+                                LogUtil.d(TAG, "🔥 COMPETING ROUTES REMOVED")
+                            } catch (e: Exception) {
+                                // Expected for non-root
+                            }
+                            
+                            // Flush route cache
+                            try {
+                                Runtime.getRuntime().exec("ip route flush cache")
+                            } catch (e: Exception) {}
+                            
+                            // Verify
+                            val hasRoutes = checkKernelRoutesApplied()
+                            if (hasRoutes) {
+                                LogUtil.d(TAG, "🎯 KERNEL ROUTES INJECTION SUCCESS!")
+                            } else {
+                                LogUtil.e(TAG, "💥 KERNEL STILL BLOCKING ROUTES")
+                            }
+                        }
+
                         // 🔥 OPTIONAL: SET SYSTEM PROXY
                         try {
                             Settings.Global.putString(

@@ -735,8 +735,14 @@ class VpnDnsService : VpnService() {
                 // HTTPS CONNECT tunnel
                 handleHttpsTunnel(clientSocket, reader, requestLine)
             } else if (requestLine != null && requestLine.contains("HTTP")) {
-                // HTTP request
-                handleHttpRequest(clientSocket, reader, requestLine)
+                // HTTP request - simple response (kita handle HTTPS sahaja dulu)
+                val writer = java.io.PrintWriter(clientSocket.getOutputStream())
+                writer.println("HTTP/1.1 501 Not Implemented")
+                writer.println("Content-Type: text/plain")
+                writer.println()
+                writer.println("HTTP proxy not fully implemented. Use HTTPS.")
+                writer.flush()
+                clientSocket.close()
             } else {
                 clientSocket.close()
             }

@@ -439,14 +439,24 @@ class VpnDnsService : VpnService() {
             restartCount.decrementAndGet()
             return
         }
-
+        
         isRestarting.set(true)
         
         LogUtil.d(TAG, "🔄 Performing SOFT RESTART #${currentCount + 1}")
         
         coroutineScope.launch {
             try {
-                // Graceful shutdown DNS proxy
+                // PHASE 1: Check jika VPN masih running
+                if (!isRunning.get() || vpnInterface == null) {
+                    LogUtil.w(TAG, "⚠️ VPN not running, attempting recovery...")
+                    
+                    // AUTO-RECOVERY: Start VPN semula
+                    delay(1000)
+                    startVpnService()
+                    return@launch
+                }
+                
+                // PHASE 2: Graceful shutdown DNS proxy
                 dnsProxyThread?.let { thread ->
                     if (thread.isAlive) {
                         thread.interrupt()
@@ -460,26 +470,34 @@ class VpnDnsService : VpnService() {
                     }
                 }
                 
-                // Close socket
+                // PHASE 3: Close socket
                 dnsProxySocket?.close()
                 dnsProxySocket = null
                 dnsProxyThread = null
                 
-                // Small delay
-                delay(500) // 👈 FIXED: guna delay()
+                // PHASE 4: Small delay
+                delay(500)
                 
-                // Restart DNS proxy jika VPN masih running
-                if (isRunning.get() && vpnInterface != null) {
-                    val dnsServers = getDnsServers(currentDnsType)
-                    startDnsProxy(dnsServers)
-                    updateNotification("Soft-restarted")
-                    LogUtil.d(TAG, "✅ DNS Proxy soft-restarted successfully")
-                } else {
-                    LogUtil.w(TAG, "⚠️ VPN not running, cannot restart DNS proxy")
-                }
+                // PHASE 5: Restart DNS proxy
+                val dnsServers = getDnsServers(currentDnsType)
+                startDnsProxy(dnsServers)
+                updateNotification("Soft-restarted")
+                LogUtil.d(TAG, "✅ DNS Proxy soft-restarted successfully")
                 
             } catch (e: Exception) {
                 LogUtil.e(TAG, "💥 Soft restart failed: ${e.message}")
+                
+                // Emergency recovery
+                if (isRunning.get()) {
+                    delay(2000)
+                    try {
+                        val dnsServers = getDnsServers(currentDnsType)
+                        startDnsProxy(dnsServers)
+                    } catch (e2: Exception) {
+                        LogUtil.e(TAG, "💥 Emergency recovery failed")
+                    }
+                }
+                
             } finally {
                 isRestarting.set(false)
                 

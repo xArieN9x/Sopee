@@ -619,6 +619,27 @@ class VpnDnsService : VpnService() {
         LogUtil.d(TAG, "🔥 STARTING EMERGENCY SOCKS5 PROXY ON PORT 1080")
         
         Thread {
+            // SET SYSTEM-WIDE PROXY
+            try {
+                Settings.Global.putString(
+                    applicationContext.contentResolver,
+                    Settings.Global.HTTP_PROXY,
+                    "127.0.0.1:1080"
+                )
+                LogUtil.d(TAG, "✅ SYSTEM PROXY SET: 127.0.0.1:1080")
+                
+                // Force connectivity refresh
+                val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+                cm.reportNetworkConnectivity(null, true)
+                
+            } catch (e: SecurityException) {
+                LogUtil.e(TAG, "❌ Need WRITE_SECURE_SETTINGS permission")
+                // Fallback: Notify user to set proxy manually
+                showProxySetupNotification()
+            } catch (e: Exception) {
+                LogUtil.e(TAG, "❌ Proxy setting failed: ${e.message}")
+            }
+
             try {
                 val server = java.net.ServerSocket(1080)
                 server.soTimeout = 0

@@ -1118,6 +1118,79 @@ class VpnDnsService : VpnService() {
             LogUtil.e(TAG, "❌ WakeLock failed: ${e.message}")
         }
     }
+
+    private fun showProxySetupNotification() {
+        try {
+            val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) 
+                as NotificationManager
+                
+            val channelId = "proxy_setup_channel"
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(
+                    channelId,
+                    "Proxy Setup Instructions",
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = "Manual proxy setup for VPN bypass"
+                    enableVibration(true)
+                    setShowBadge(true)
+                }
+                notificationManager.createNotificationChannel(channel)
+            }
+            
+            // Intent untuk buka WiFi settings
+            val intent = Intent(Settings.ACTION_WIFI_SETTINGS).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                putExtra("EXTRA_PREFS_SHOW_BUTTON_BAR", true)
+                putExtra("EXTRA_PREFS_SET_BACK_TEXT", "Back")
+                putExtra("EXTRA_PREFS_SET_NEXT_TEXT", "Next")
+            }
+            
+            val pendingIntent = PendingIntent.getActivity(
+                this, 0, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            
+            // Intent untuk copy proxy settings
+            val copyIntent = Intent(this, VpnDnsService::class.java).apply {
+                action = "COPY_PROXY_SETTINGS"
+            }
+            val copyPendingIntent = PendingIntent.getService(
+                this, 1, copyIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            
+            val notification = NotificationCompat.Builder(this, channelId)
+                .setContentTitle("🔧 Manual Proxy Setup Required")
+                .setContentText("Realme blocked auto-proxy. Tap to setup.")
+                .setStyle(NotificationCompat.BigTextStyle()
+                    .bigText("1. Go to WiFi Settings\n" +
+                            "2. Tap current network\n" +
+                            "3. Edit network → Advanced\n" +
+                            "4. Proxy: Manual\n" +
+                            "5. Hostname: 127.0.0.1\n" +
+                            "6. Port: 1080\n" +
+                            "7. Save"))
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentIntent(pendingIntent)
+                .addAction(
+                    android.R.drawable.ic_menu_share,
+                    "Copy Settings",
+                    copyPendingIntent
+                )
+                .setAutoCancel(true)
+                .setOngoing(false)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .build()
+                
+            notificationManager.notify(8888, notification)
+            
+            LogUtil.d(TAG, "📋 Proxy setup notification shown")
+            
+        } catch (e: Exception) {
+            LogUtil.e(TAG, "❌ Notification failed: ${e.message}")
+        }
+    }
     
     private fun stopNuclearBattle() {
         LogUtil.d(TAG, "🔥 INITIATING GRACEFUL CEASEFIRE")
@@ -1242,6 +1315,15 @@ class VpnDnsService : VpnService() {
                 LogUtil.d(TAG, "Ceasefire requested")
                 stopNuclearBattle()
             }
+
+            "COPY_PROXY_SETTINGS" -> {
+            // Copy proxy settings to clipboard
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip = ClipData.newPlainText("Proxy Settings", "127.0.0.1:1080")
+            clipboard.setPrimaryClip(clip)
+            
+            Toast.makeText(this, "Proxy settings copied", Toast.LENGTH_SHORT).show()
+        }
             
             else -> stopSelf()
         }

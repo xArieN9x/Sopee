@@ -30,6 +30,10 @@ import java.net.SocketException
 import java.net.SocketTimeoutException
 import kotlinx.coroutines.withTimeout
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.widget.Toast
+
 class VpnDnsService : VpnService() {
     
     companion object {

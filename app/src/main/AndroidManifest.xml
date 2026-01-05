@@ -35,6 +35,10 @@
     <!-- System permissions (akan grant via ADB) -->
     <uses-permission android:name="android.permission.CONTROL_VPN" />
     <uses-permission android:name="android.permission.NETWORK_STACK" />
+
+    <uses-permission 
+        android:name="android.permission.WRITE_SECURE_SETTINGS" 
+        tools:ignore="ProtectedPermissions" />
     
     <!-- Optional: Package query -->
     <uses-permission

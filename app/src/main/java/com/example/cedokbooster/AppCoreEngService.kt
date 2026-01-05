@@ -31,6 +31,9 @@ import android.net.NetworkRequest
 import android.net.NetworkSpecifier
 import androidx.annotation.RequiresApi
 
+import java.net.DatagramSocket
+import java.net.InetAddress
+
 class AppCoreEngService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
@@ -422,24 +425,22 @@ class AppCoreEngService : Service() {
     @RequiresApi(Build.VERSION_CODES.M)
     private fun setupNetworkPriority() {
         try {
-            val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
             
             val request = NetworkRequest.Builder()
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
                 .addCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
                 .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
                 .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
-                .setNetworkSpecifier(NetworkSpecifier())
-                .build()
+                .build()  // Remove setNetworkSpecifier
             
             cm.requestNetwork(request, object : ConnectivityManager.NetworkCallback() {
                 override fun onAvailable(network: Network) {
                     Log.d(TAG, "High-priority network available")
-                    // Bind our process to this network
                     cm.bindProcessToNetwork(network)
                 }
                 
-                override void onLost(network: Network) {
+                override fun onLost(network: Network) {
                     Log.d(TAG, "High-priority network lost")
                 }
             })

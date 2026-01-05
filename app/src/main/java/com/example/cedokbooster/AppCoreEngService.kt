@@ -271,22 +271,172 @@ class AppCoreEngService : Service() {
 
     private fun startNetworkConditioning() {
         keepAliveJob = CoroutineScope(Dispatchers.IO).launch {
+            // A1: Traffic Pattern Mimicking - QUIC keep-alive
+            val quicSocket = DatagramSocket()
+            try {
+                quicSocket.connect(InetAddress.getByName("8.8.8.8"), 443)
+            } catch (e: Exception) {
+                Log.w(TAG, "QUIC socket failed, fallback to TCP", e)
+            }
+    
+            // B1: CDN Pre-warming (one-time)
+            prewarmCDNConnections()
+    
+            // C1: Network Priority Setup
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                setupNetworkPriority()
+            }
+    
+            var cycle = 0
+            
             while (isActive) {
                 try {
-                    val connection = java.net.URL("https://www.google.com").openConnection() as java.net.HttpURLConnection
-                    connection.connectTimeout = 5000
-                    connection.requestMethod = "HEAD"
+                    cycle++
+                    
+                    // ROTATE TARGETS (mimic real browsing)
+                    val targets = listOf(
+                        "https://www.google.com",
+                        "https://www.youtube.com",
+                        "https://i.ytimg.com", // YouTube CDN
+                        "https://rr1---sn-5hne6nsk.googlevideo.com", // Actual YouTube video CDN
+                        "https://1.1.1.1", // Cloudflare DNS (port 443)
+                        "https://8.8.8.8"  // Google DNS (port 443)
+                    )
+                    
+                    val target = targets[cycle % targets.size]
+                    
+                    // A2: Mix protocols - Sometimes QUIC, sometimes HTTP
+                    if (cycle % 3 == 0 && quicSocket.isConnected) {
+                        // QUIC-like UDP keep-alive
+                        quicSocket.send("PING/${System.currentTimeMillis()}".toByteArray())
+                        Log.d(TAG, "QUIC keep-alive sent to 8.8.8.8:443")
+                    }
+                    
+                    // VARIABLE REQUEST TYPES
+                    val connection = URL(target).openConnection() as HttpURLConnection
+                    connection.connectTimeout = 3000 // Shorter for faster rotation
+                    connection.readTimeout = 5000
+                    
+                    // Next-Level: Spoof headers
+                    connection.setRequestProperty("User-Agent", 
+                        "Mozilla/5.0 (Linux; Android 10; RMX2020) AppleWebKit/537.36 " +
+                        "(KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36")
+                    
+                    // Mimic YouTube's Accept header
+                    connection.setRequestProperty("Accept", 
+                        "text/html,application/xhtml+xml,application/xml;q=0.9," +
+                        "image/webp,image/apng,*/*;q=0.8")
+                    
+                    // Randomize request method
+                    val methods = listOf("HEAD", "GET", "OPTIONS")
+                    connection.requestMethod = methods[cycle % methods.size]
+                    
+                    // VARIABLE PAYLOAD SIZES (mimic adaptive bitrate)
+                    val simulatePayload = cycle % 5 == 0
+                    if (simulatePayload && connection.requestMethod == "GET") {
+                        // Request actual data (like video chunk)
+                        connection.doInput = true
+                    }
+                    
                     connection.connect()
                     val responseCode = connection.responseCode
-                    Log.d(TAG, "Keep-alive sent, response: $responseCode")
+                    
+                    // Next-Level: Read partial response if GET
+                    if (simulatePayload && responseCode == 200) {
+                        val buffer = ByteArray(1024) // Read 1KB (like chunk header)
+                        connection.inputStream.read(buffer, 0, 1024)
+                    }
+                    
+                    // LOG WITH TRAFFIC TYPE
+                    val trafficType = when {
+                        target.contains("ytimg.com") -> "YT-CDN"
+                        target.contains("googlevideo.com") -> "YT-VIDEO"
+                        target.contains("1.1.1.1") -> "CF-DNS"
+                        target.contains("8.8.8.8") -> "GG-DNS"
+                        else -> "WEB"
+                    }
+                    
+                    Log.d(TAG, "[$trafficType] $target → $responseCode (${connection.requestMethod})")
+                    
                     connection.disconnect()
+                    
+                    // Next-Level: Variable delays (mimic human + network variance)
+                    val delay = when (cycle % 6) {
+                        0 -> 15000L // 15s
+                        1 -> 25000L // 25s
+                        2 -> 30000L // 30s
+                        3 -> 10000L // 10s
+                        4 -> 45000L // 45s
+                        else -> 20000L // 20s
+                    }
+                    
+                    delay(delay)
+                    
                 } catch (e: Exception) {
-                    Log.e(TAG, "Keep-alive failed", e)
+                    Log.e(TAG, "Network conditioning failed: ${e.message}")
+                    delay(10000) // Shorter delay on error
                 }
-                delay(30000) // Every 30 seconds
             }
         }
-        Log.d(TAG, "Network conditioning started")
+        
+        Log.d(TAG, "ADVANCED Network conditioning started")
+    }
+    
+    // B2: CDN Pre-warming function
+    private fun prewarmCDNConnections() {
+        CoroutineScope(Dispatchers.IO).launch {
+            val cdns = listOf(
+                "https://yt3.ggpht.com",
+                "https://i.ytimg.com",
+                "https://fonts.gstatic.com",
+                "https://www.gstatic.com",
+                "https://play.googleapis.com"
+            )
+            
+            cdns.forEachIndexed { index, cdn ->
+                delay(index * 1000L) // Stagger connections
+                try {
+                    val connection = URL(cdn).openConnection() as HttpURLConnection
+                    connection.connectTimeout = 3000
+                    connection.requestMethod = "OPTIONS" // Lightweight
+                    connection.connect()
+                    Log.d(TAG, "CDN pre-warmed: $cdn (${connection.responseCode})")
+                    connection.disconnect()
+                } catch (e: Exception) {
+                    Log.w(TAG, "CDN pre-warm failed for $cdn")
+                }
+            }
+        }
+    }
+    
+    // C2: Network Priority Setup
+    @RequiresApi(Build.VERSION_CODES.M)
+    private fun setupNetworkPriority() {
+        try {
+            val cm = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
+            
+            val request = NetworkRequest.Builder()
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+                .addCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+                .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
+                .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                .setNetworkSpecifier(NetworkSpecifier())
+                .build()
+            
+            cm.requestNetwork(request, object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: Network) {
+                    Log.d(TAG, "High-priority network available")
+                    // Bind our process to this network
+                    cm.bindProcessToNetwork(network)
+                }
+                
+                override void onLost(network: Network) {
+                    Log.d(TAG, "High-priority network lost")
+                }
+            })
+        } catch (e: Exception) {
+            Log.e(TAG, "Network priority setup failed", e)
+        }
     }
 
     private fun stopNetworkConditioning() {

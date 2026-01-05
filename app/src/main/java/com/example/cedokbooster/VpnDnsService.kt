@@ -37,6 +37,9 @@ class VpnDnsService : VpnService() {
         private const val ACTION_STOP_VPN = "com.example.cedokbooster.STOP_VPN"
         private const val ACTION_SOFT_RESTART = "com.example.cedokbooster.SOFT_RESTART_VPN"
         const val EXTRA_DNS_TYPE = "dns_type"
+
+        // Restart limits
+        private const val MAX_RESTARTS_PER_MINUTE = 3
         
         private var isRunning = AtomicBoolean(false)
         private var currentDns = "1.0.0.1"
@@ -83,7 +86,7 @@ class VpnDnsService : VpnService() {
     // Restart stability
     private val isRestarting = AtomicBoolean(false)
     private val restartCount = AtomicInteger(0)
-    private const val MAX_RESTARTS_PER_MINUTE = 3
+    //private const val MAX_RESTARTS_PER_MINUTE = 3
     private val handler = Handler(Looper.getMainLooper())
     
     /**
@@ -436,7 +439,7 @@ class VpnDnsService : VpnService() {
             restartCount.decrementAndGet()
             return
         }
-        
+
         isRestarting.set(true)
         
         LogUtil.d(TAG, "🔄 Performing SOFT RESTART #${currentCount + 1}")

@@ -128,9 +128,6 @@ class AppCoreEngService : Service() {
         return START_STICKY
     }
 
-    // Store listener reference for cleanup - LETAK SINI
-    private lateinit var locationListener: LocationListener
-
     private val restartReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == "RESTART_CORE_ENGINE") {

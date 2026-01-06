@@ -11,6 +11,7 @@ import android.content.IntentFilter
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.location.LocationProvider
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
@@ -126,6 +127,9 @@ class AppCoreEngService : Service() {
         }
         return START_STICKY
     }
+
+    // Store listener reference for cleanup - LETAK SINI
+    private lateinit var locationListener: LocationListener
 
     private val restartReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -247,7 +251,7 @@ class AppCoreEngService : Service() {
     }
 
     private fun startGPSStabilization() {
-        // Check runtime permission first
+        // Check runtime permission
         if (ContextCompat.checkSelfPermission(
                 this,
                 Manifest.permission.ACCESS_FINE_LOCATION
@@ -257,82 +261,126 @@ class AppCoreEngService : Service() {
             return
         }
     
+        // Check background location for Android 10+ (API 29+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            if (ContextCompat.checkSelfPermission(
+                    this,
+                    Manifest.permission.ACCESS_BACKGROUND_LOCATION
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                Log.w(TAG, "BACKGROUND_LOCATION not granted - may restrict in background")
+            }
+        }
+    
         gpsStatus = "stabilizing"
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
     
+        // Check if GPS provider is enabled
+        if (locationManager?.isProviderEnabled(LocationManager.GPS_PROVIDER) != true) {
+            Log.e(TAG, "GPS provider not enabled")
+            gpsStatus = "disabled"
+            broadcastStatus()
+            return
+        }
+    
         try {
+            // Create and store listener reference for cleanup
+            locationListener = createHybridLocationListener()
+            
             locationManager?.requestLocationUpdates(
                 LocationManager.GPS_PROVIDER,
-                500L, // 0.5 second - LEVEL 1 upgrade
+                1000L, // 1 second (stability)
                 0f,
-                createFilteredLocationListener() // LEVEL 2 upgrade
+                locationListener
             )
-            Log.d(TAG, "GPS LEVEL 2: 500ms + Accuracy Filtering (<5m)")
+            Log.d(TAG, "GPS HYBRID MODE: 1000ms + Smart Monitoring")
             broadcastStatus()
         } catch (e: SecurityException) {
             Log.e(TAG, "GPS permission not granted", e)
         }
     }
     
-    private fun createFilteredLocationListener(): LocationListener {
+    private fun stopGPSStabilization() {
+        try {
+            if (::locationListener.isInitialized) {
+                locationManager?.removeUpdates(locationListener)
+                Log.d(TAG, "GPS stabilization stopped")
+            } else {
+                Log.w(TAG, "locationListener not initialized, skipping removeUpdates")
+            }
+            gpsStatus = "stopped"
+            broadcastStatus()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to stop GPS: ${e.message}")
+        }
+    }
+    
+    private fun createHybridLocationListener(): LocationListener {
         return object : LocationListener {
-            private var lowAccuracyCounter = 0
-            private val MIN_ACCURACY = 5.0f // 5 meter target
+            private var locationCount = 0
+            private var lastAccuracy = 0f
+            private var lastBroadcastTime = 0L
+            private val BROADCAST_INTERVAL = 2000L // Broadcast setiap 2 saat sahaja
             
             override fun onLocationChanged(location: Location) {
+                locationCount++
                 val accuracy = location.accuracy
+                val currentTime = System.currentTimeMillis()
                 
-                if (accuracy > 0 && accuracy < MIN_ACCURACY) {
-                    // HIGH ACCURACY LOCATION (<5m)
-                    Log.d(TAG, "✅ High accuracy: ${String.format("%.1f", accuracy)}m")
+                // Accuracy logging & monitoring
+                Log.d(TAG, "GPS Update #$locationCount: ${String.format("%.1f", accuracy)}m")
+                
+                // Broadcast dengan rate limiting
+                if (currentTime - lastBroadcastTime >= BROADCAST_INTERVAL) {
                     broadcastLocation(location)
-                    lowAccuracyCounter = 0
+                    lastBroadcastTime = currentTime
                     
-                } else if (accuracy >= MIN_ACCURACY) {
-                    // LOW ACCURACY LOCATION (≥5m)
-                    lowAccuracyCounter++
-                    Log.d(TAG, "⚠️ Low accuracy: ${String.format("%.1f", accuracy)}m (reject #$lowAccuracyCounter)")
-                    
-                    // FALLBACK: Accept after 10 consecutive low-accuracy readings
-                    if (lowAccuracyCounter >= 10) {
-                        Log.d(TAG, "🔁 Fallback: Accepting ${String.format("%.1f", accuracy)}m")
-                        broadcastLocation(location)
-                        lowAccuracyCounter = 0
+                    // Accuracy trend monitoring
+                    if (lastAccuracy > 0) {
+                        val accuracyDiff = accuracy - lastAccuracy
+                        if (accuracyDiff < -2.0) {
+                            Log.d(TAG, "Accuracy improving: ${String.format("%.1f", accuracyDiff)}m")
+                        }
                     }
-                    
-                } else {
-                    // INVALID ACCURACY (0 or negative)
-                    Log.d(TAG, "❌ Invalid accuracy: $accuracy")
+                    lastAccuracy = accuracy
+                }
+                
+                // Auto-detect high accuracy mode
+                if (accuracy < 5.0f && accuracy > 0) {
+                    Log.d(TAG, "HIGH ACCURACY MODE: ${String.format("%.1f", accuracy)}m")
                 }
             }
     
             override fun onProviderEnabled(provider: String) {
-                Log.d(TAG, "Provider enabled: $provider")
+                Log.d(TAG, "GPS provider enabled: $provider")
+                gpsStatus = "active"
+                broadcastStatus()
             }
             
             override fun onProviderDisabled(provider: String) {
-                Log.d(TAG, "Provider disabled: $provider")
+                Log.d(TAG, "GPS provider disabled: $provider")
+                gpsStatus = "disabled"
+                broadcastStatus()
             }
             
+            @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
             override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {
-                // Optional: Add status monitoring
+                // For backward compatibility (API < 29)
+                val statusText = when (status) {
+                    LocationProvider.AVAILABLE -> "AVAILABLE"
+                    LocationProvider.OUT_OF_SERVICE -> "OUT_OF_SERVICE"
+                    LocationProvider.TEMPORARILY_UNAVAILABLE -> "TEMPORARILY_UNAVAILABLE"
+                    else -> "UNKNOWN"
+                }
+                Log.d(TAG, "GPS status: $statusText")
+                gpsStatus = statusText.lowercase()
+                broadcastStatus()
             }
         }
     }
-    
-    private fun broadcastLocation(location: Location) {
-        // Original broadcast logic here
-        Log.d(TAG, "Broadcasting: ${location.latitude}, ${location.longitude}")
-    }
 
-    private fun stopGPSStabilization() {
-        try {
-            locationManager?.removeUpdates(locationListener)
-            Log.d(TAG, "GPS stabilization stopped")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error stopping GPS", e)
-        }
-    }
+    // Store listener reference for cleanup
+    private lateinit var locationListener: LocationListener
 
     // NEW UPDATE for VpnDnsService.kt
     private fun applyDNS() {

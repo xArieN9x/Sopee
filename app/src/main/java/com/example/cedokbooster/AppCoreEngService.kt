@@ -99,6 +99,7 @@ class AppCoreEngService : Service() {
 
         override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
         override fun onProviderEnabled(provider: String) {}
+        override fun onProviderDisabled(provider: String) {}
     }
 
     override fun onCreate() {
@@ -374,9 +375,6 @@ class AppCoreEngService : Service() {
             }
         }
     }
-
-    // Store listener reference for cleanup
-    private lateinit var locationListener: LocationListener
 
     // NEW UPDATE for VpnDnsService.kt
     private fun applyDNS() {
@@ -698,6 +696,11 @@ class AppCoreEngService : Service() {
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.notify(NOTIFICATION_ID, notification)
         }
+    }
+
+    private fun broadcastLocation(location: Location) {
+        Log.d(TAG, "Location: ${location.latitude}, ${location.longitude}, Accuracy: ${location.accuracy}m")
+        // Optional: Add your logic here
     }
 
     private fun createNotification(): Notification {

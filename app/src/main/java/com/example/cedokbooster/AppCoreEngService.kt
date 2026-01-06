@@ -38,6 +38,9 @@ import java.net.InetAddress
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.util.concurrent.TimeUnit
 
 class AppCoreEngService : Service() {
 

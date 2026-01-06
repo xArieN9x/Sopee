@@ -302,14 +302,14 @@ class AppCoreEngService : Service() {
 
     private fun startNetworkConditioning() {
         keepAliveJob = CoroutineScope(Dispatchers.IO).launch {
-            // A1: QUIC socket - FIXED (use proper QUIC test endpoint)
+            // A1: QUIC socket
             val quicSocket = DatagramSocket()
-            val quicTestIP = "8.8.8.8" // Google DNS support QUIC
+            val quicTestIP = "8.8.8.8"
             
-            // B1: CDN Pre-warming (one-time) - FIXED (use HEAD instead of OPTIONS)
+            // B1: CDN Pre-warming
             prewarmCDNConnections()
             
-            // C1: Network Priority Setup - FIXED (remove network specifier issue)
+            // C1: Network Priority Setup
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
                 setupNetworkPriority()
             }
@@ -320,35 +320,33 @@ class AppCoreEngService : Service() {
                 try {
                     cycle++
                     
-                    // ROTATE TARGETS - FIXED (remove HTTPS from IPs)
+                    // ROTATE TARGETS - FIXED: Ganti HTTP IP dengan HTTPS domains
                     val targets = listOf(
                         "https://www.google.com",
                         "https://www.youtube.com",
                         "https://i.ytimg.com",
                         "https://rr1---sn-5hne6nsk.googlevideo.com",
-                        "http://8.8.8.8",  // CHANGED: HTTP not HTTPS
-                        "http://1.1.1.1"   // CHANGED: HTTP not HTTPS
+                        "https://dns.google",           // GANTI: http://8.8.8.8
+                        "https://one.one.one.one"       // GANTI: http://1.1.1.1
                     )
                     
                     val target = targets[cycle % targets.size]
                     
-                    // A2: Mix protocols - FIXED (proper QUIC test)
+                    // A2: Mix protocols
                     if (cycle % 3 == 0) {
                         try {
-                            // Real QUIC test: Connect to known QUIC endpoint
                             val quicClient = OkHttpClient.Builder()
                                 .connectTimeout(2, TimeUnit.SECONDS)
                                 .build()
                             
                             val quicRequest = Request.Builder()
-                                .url("https://quic.rocks:443/") // Public QUIC test server
+                                .url("https://quic.rocks:443/")
                                 .build()
                             
                             quicClient.newCall(quicRequest).execute().use { response ->
-                                Log.d(TAG, "QUIC test → ${response.code}")
+                                Log.d(TAG, "QUIC test -> ${response.code}")
                             }
                         } catch (e: Exception) {
-                            // Fallback to UDP ping if QUIC fails
                             try {
                                 val pingData = "PING".toByteArray()
                                 val pingPacket = DatagramPacket(
@@ -365,7 +363,7 @@ class AppCoreEngService : Service() {
                         }
                     }
                     
-                    // VARIABLE REQUEST TYPES - FIXED (handle SSL exception for IPs)
+                    // VARIABLE REQUEST TYPES
                     val connection = URL(target).openConnection() as HttpURLConnection
                     connection.connectTimeout = 3000
                     connection.readTimeout = 5000
@@ -379,8 +377,8 @@ class AppCoreEngService : Service() {
                         "text/html,application/xhtml+xml,application/xml;q=0.9," +
                         "image/webp,image/apng,*/*;q=0.8")
                     
-                    // Randomize request method - FIXED (remove OPTIONS)
-                    val methods = listOf("HEAD", "GET") // REMOVED: "OPTIONS"
+                    // Randomize request method
+                    val methods = listOf("HEAD", "GET")
                     connection.requestMethod = methods[cycle % methods.size]
                     
                     // VARIABLE PAYLOAD SIZES
@@ -398,16 +396,16 @@ class AppCoreEngService : Service() {
                         connection.inputStream.read(buffer, 0, 1024)
                     }
                     
-                    // LOG WITH TRAFFIC TYPE
+                    // LOG WITH TRAFFIC TYPE - FIXED: Update traffic types
                     val trafficType = when {
                         target.contains("ytimg.com") -> "YT-CDN"
                         target.contains("googlevideo.com") -> "YT-VIDEO"
-                        target.contains("1.1.1.1") -> "CF-DNS"
-                        target.contains("8.8.8.8") -> "GG-DNS"
+                        target.contains("one.one.one.one") -> "CF-DNS"  // Updated
+                        target.contains("dns.google") -> "GG-DNS"       // Updated
                         else -> "WEB"
                     }
                     
-                    Log.d(TAG, "[$trafficType] $target → $responseCode (${connection.requestMethod})")
+                    Log.d(TAG, "[$trafficType] $target -> $responseCode (${connection.requestMethod})")
                     
                     connection.disconnect()
                     
@@ -431,7 +429,7 @@ class AppCoreEngService : Service() {
         }
     }
     
-    // B2: CDN Pre-warming function - FIXED
+    // B2: CDN Pre-warming function
     private fun prewarmCDNConnections() {
         CoroutineScope(Dispatchers.IO).launch {
             val cdns = listOf(
@@ -439,7 +437,9 @@ class AppCoreEngService : Service() {
                 "https://i.ytimg.com",
                 "https://fonts.gstatic.com",
                 "https://www.gstatic.com",
-                "https://play.googleapis.com"
+                "https://play.googleapis.com",
+                "https://dns.google",           // ADDED
+                "https://one.one.one.one"       // ADDED
             )
             
             cdns.forEachIndexed { index, cdn ->
@@ -447,7 +447,7 @@ class AppCoreEngService : Service() {
                 try {
                     val connection = URL(cdn).openConnection() as HttpURLConnection
                     connection.connectTimeout = 3000
-                    connection.requestMethod = "HEAD" // CHANGED: OPTIONS → HEAD
+                    connection.requestMethod = "HEAD"
                     connection.connect()
                     Log.d(TAG, "CDN pre-warmed: $cdn (${connection.responseCode})")
                     connection.disconnect()
@@ -458,7 +458,7 @@ class AppCoreEngService : Service() {
         }
     }
     
-    // C2: Network Priority Setup - FIXED
+    // C2: Network Priority Setup
     @RequiresApi(Build.VERSION_CODES.M)
     private fun setupNetworkPriority() {
         try {
@@ -484,7 +484,7 @@ class AppCoreEngService : Service() {
                 override fun onLost(network: Network) {
                     Log.d(TAG, "High-priority network lost")
                     try {
-                        cm.bindProcessToNetwork(null) // Unbind
+                        cm.bindProcessToNetwork(null)
                     } catch (e: Exception) {
                         Log.e(TAG, "unbind failed", e)
                     }

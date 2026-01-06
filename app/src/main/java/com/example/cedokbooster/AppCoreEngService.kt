@@ -240,21 +240,82 @@ class AppCoreEngService : Service() {
     }
 
     private fun startGPSStabilization() {
+        // Check runtime permission first
+        if (ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_FINE_LOCATION
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            Log.e(TAG, "ACCESS_FINE_LOCATION permission not granted")
+            return
+        }
+    
         gpsStatus = "stabilizing"
         locationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
-
+    
         try {
             locationManager?.requestLocationUpdates(
                 LocationManager.GPS_PROVIDER,
-                1000L, // 1 second
+                500L, // 0.5 second - LEVEL 1 upgrade
                 0f,
-                locationListener
+                createFilteredLocationListener() // LEVEL 2 upgrade
             )
-            Log.d(TAG, "GPS stabilization started")
+            Log.d(TAG, "GPS LEVEL 2: 500ms + Accuracy Filtering (<5m)")
             broadcastStatus()
         } catch (e: SecurityException) {
             Log.e(TAG, "GPS permission not granted", e)
         }
+    }
+    
+    private fun createFilteredLocationListener(): LocationListener {
+        return object : LocationListener {
+            private var lowAccuracyCounter = 0
+            private val MIN_ACCURACY = 5.0f // 5 meter target
+            
+            override fun onLocationChanged(location: Location) {
+                val accuracy = location.accuracy
+                
+                if (accuracy > 0 && accuracy < MIN_ACCURACY) {
+                    // HIGH ACCURACY LOCATION (<5m)
+                    Log.d(TAG, "✅ High accuracy: ${String.format("%.1f", accuracy)}m")
+                    broadcastLocation(location)
+                    lowAccuracyCounter = 0
+                    
+                } else if (accuracy >= MIN_ACCURACY) {
+                    // LOW ACCURACY LOCATION (≥5m)
+                    lowAccuracyCounter++
+                    Log.d(TAG, "⚠️ Low accuracy: ${String.format("%.1f", accuracy)}m (reject #$lowAccuracyCounter)")
+                    
+                    // FALLBACK: Accept after 10 consecutive low-accuracy readings
+                    if (lowAccuracyCounter >= 10) {
+                        Log.d(TAG, "🔁 Fallback: Accepting ${String.format("%.1f", accuracy)}m")
+                        broadcastLocation(location)
+                        lowAccuracyCounter = 0
+                    }
+                    
+                } else {
+                    // INVALID ACCURACY (0 or negative)
+                    Log.d(TAG, "❌ Invalid accuracy: $accuracy")
+                }
+            }
+    
+            override fun onProviderEnabled(provider: String) {
+                Log.d(TAG, "Provider enabled: $provider")
+            }
+            
+            override fun onProviderDisabled(provider: String) {
+                Log.d(TAG, "Provider disabled: $provider")
+            }
+            
+            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {
+                // Optional: Add status monitoring
+            }
+        }
+    }
+    
+    private fun broadcastLocation(location: Location) {
+        // Original broadcast logic here
+        Log.d(TAG, "Broadcasting: ${location.latitude}, ${location.longitude}")
     }
 
     private fun stopGPSStabilization() {

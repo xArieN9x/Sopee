@@ -29,7 +29,6 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
-import android.net.NetworkSpecifier
 import androidx.annotation.RequiresApi
 
 import java.net.DatagramSocket
@@ -39,9 +38,6 @@ import java.net.InetAddress
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import java.util.concurrent.TimeUnit
 
 class AppCoreEngService : Service() {
 
@@ -217,10 +213,6 @@ class AppCoreEngService : Service() {
             putExtra("isActive", false)
         })
 
-        // Trigger force close Panda via accessibility
-        //val intent = Intent(AccessibilityAutomationService.FORCE_CLOSE_PANDA)
-        //LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
-
         broadcastStatus()
         stopForeground(true)
         stopSelf()
@@ -281,16 +273,14 @@ class AppCoreEngService : Service() {
         }
     
         try {
-            // Create and store listener reference for cleanup
-            locationListener = createHybridLocationListener()
-            
+            // USE EXISTING locationListener (val) - tidak perlu create baru
             locationManager?.requestLocationUpdates(
                 LocationManager.GPS_PROVIDER,
-                1000L, // 1 second (stability)
+                1000L, // 1 second (original stable interval)
                 0f,
-                locationListener
+                locationListener  // ✅ Use existing val listener
             )
-            Log.d(TAG, "GPS HYBRID MODE: 1000ms + Smart Monitoring")
+            Log.d(TAG, "GPS Stabilization Started: 1000ms interval")
             broadcastStatus()
         } catch (e: SecurityException) {
             Log.e(TAG, "GPS permission not granted", e)
@@ -299,80 +289,13 @@ class AppCoreEngService : Service() {
     
     private fun stopGPSStabilization() {
         try {
-            if (::locationListener.isInitialized) {
-                locationManager?.removeUpdates(locationListener)
-                Log.d(TAG, "GPS stabilization stopped")
-            } else {
-                Log.w(TAG, "locationListener not initialized, skipping removeUpdates")
-            }
+            // locationListener sudah initialized sebagai val
+            locationManager?.removeUpdates(locationListener)
+            Log.d(TAG, "GPS stabilization stopped")
             gpsStatus = "stopped"
             broadcastStatus()
         } catch (e: Exception) {
             Log.e(TAG, "Failed to stop GPS: ${e.message}")
-        }
-    }
-    
-    private fun createHybridLocationListener(): LocationListener {
-        return object : LocationListener {
-            private var locationCount = 0
-            private var lastAccuracy = 0f
-            private var lastBroadcastTime = 0L
-            private val BROADCAST_INTERVAL = 2000L // Broadcast setiap 2 saat sahaja
-            
-            override fun onLocationChanged(location: Location) {
-                locationCount++
-                val accuracy = location.accuracy
-                val currentTime = System.currentTimeMillis()
-                
-                // Accuracy logging & monitoring
-                Log.d(TAG, "GPS Update #$locationCount: ${String.format("%.1f", accuracy)}m")
-                
-                // Broadcast dengan rate limiting
-                if (currentTime - lastBroadcastTime >= BROADCAST_INTERVAL) {
-                    broadcastLocation(location)
-                    lastBroadcastTime = currentTime
-                    
-                    // Accuracy trend monitoring
-                    if (lastAccuracy > 0) {
-                        val accuracyDiff = accuracy - lastAccuracy
-                        if (accuracyDiff < -2.0) {
-                            Log.d(TAG, "Accuracy improving: ${String.format("%.1f", accuracyDiff)}m")
-                        }
-                    }
-                    lastAccuracy = accuracy
-                }
-                
-                // Auto-detect high accuracy mode
-                if (accuracy < 5.0f && accuracy > 0) {
-                    Log.d(TAG, "HIGH ACCURACY MODE: ${String.format("%.1f", accuracy)}m")
-                }
-            }
-    
-            override fun onProviderEnabled(provider: String) {
-                Log.d(TAG, "GPS provider enabled: $provider")
-                gpsStatus = "active"
-                broadcastStatus()
-            }
-            
-            override fun onProviderDisabled(provider: String) {
-                Log.d(TAG, "GPS provider disabled: $provider")
-                gpsStatus = "disabled"
-                broadcastStatus()
-            }
-            
-            @Suppress("OVERRIDE_DEPRECATION", "DEPRECATION")
-            override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {
-                // For backward compatibility (API < 29)
-                val statusText = when (status) {
-                    LocationProvider.AVAILABLE -> "AVAILABLE"
-                    LocationProvider.OUT_OF_SERVICE -> "OUT_OF_SERVICE"
-                    LocationProvider.TEMPORARILY_UNAVAILABLE -> "TEMPORARILY_UNAVAILABLE"
-                    else -> "UNKNOWN"
-                }
-                Log.d(TAG, "GPS status: $statusText")
-                gpsStatus = statusText.lowercase()
-                broadcastStatus()
-            }
         }
     }
 
@@ -696,11 +619,6 @@ class AppCoreEngService : Service() {
             val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             manager.notify(NOTIFICATION_ID, notification)
         }
-    }
-
-    private fun broadcastLocation(location: Location) {
-        Log.d(TAG, "Location: ${location.latitude}, ${location.longitude}, Accuracy: ${location.accuracy}m")
-        // Optional: Add your logic here
     }
 
     private fun createNotification(): Notification {

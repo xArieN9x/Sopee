@@ -35,6 +35,10 @@ import java.net.DatagramSocket
 import java.net.DatagramPacket
 import java.net.InetAddress
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
+
 class AppCoreEngService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null

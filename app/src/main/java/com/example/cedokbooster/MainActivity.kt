@@ -21,6 +21,9 @@ import android.net.VpnService
 import android.app.AlertDialog
 import android.os.Handler
 import android.os.Looper
+import android.app.ActivityManager
+import android.content.pm.PackageManager
+import kotlin.system.exitProcess
 
 import com.example.cedokbooster.AccessibilityAutomationService.Companion.DO_ALL_JOB_TRIGGER
 
@@ -200,23 +203,43 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun forceCloseApp() {
-        Log.d(TAG, "🛑 FORCE CLOSING CedokBooster app")
+        Log.d(TAG, "🛑 NUCLEAR OPTION: Force stop app package")
         
-        // 1. Stop SEMUA services
-        stopEverything()  // Function yang kita dah buat
-        
-        // 2. Stop SEMUA activities
-        finishAffinity()  // Close semua activities app ini
-        
-        // 3. Optional: Kill process (extreme)
-        Handler(Looper.getMainLooper()).postDelayed({
-            android.os.Process.killProcess(android.os.Process.myPid())
-        }, 1000)  // Delay 1 saat untuk cleanup dulu
-        
-        // 4. Optional: System exit
-        Handler(Looper.getMainLooper()).postDelayed({
-            System.exit(0)
-        }, 1500)
+        try {
+            // 1. Stop semua services
+            stopEverything()
+            
+            // 2. Force stop melalui ActivityManager (Android 5.0+)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                val activityManager = getSystemService(ACTIVITY_SERVICE) as ActivityManager
+                activityManager.appTasks.forEach { task ->
+                    task.finishAndRemoveTask()
+                }
+            }
+            
+            // 3. Clear recent tasks
+            val activityManager = getSystemService(ACTIVITY_SERVICE) as ActivityManager
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                activityManager.appTasks.clear()
+            }
+            
+            // 4. Kill process dengan cara lebih aggressive
+            Handler(Looper.getMainLooper()).postDelayed({
+                // Method 1: Kill process
+                android.os.Process.killProcess(android.os.Process.myPid())
+                
+                // Method 2: Exit VM
+                System.exit(0)
+                
+                // Method 3: Exit process
+                exitProcess(0)
+            }, 300)
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Force close error: ${e.message}")
+            // Fallback: Simple finish
+            finish()
+        }
     }
 
     private fun triggerDoAllJob() {

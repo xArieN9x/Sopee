@@ -95,13 +95,14 @@ class MainActivity : AppCompatActivity() {
         }
 
         btnOnB.setOnClickListener {
-            Log.d(TAG, "ON B BUTTON CLICKED")
+            Log.d(TAG, "BUTTON STOP CLICKED")
             if (!isAccessibilityEnabled()) {
                 Toast.makeText(this, "Sila enable Accessibility Service dulu!", Toast.LENGTH_LONG).show()
                 openAccessibilitySettings()
                 return@setOnClickListener
             }
-            startCEWithVpnCheck("B")
+            stopEverything()
+            //startCEWithVpnCheck("B")
             //startCoreEngine("B")
         }
 
@@ -167,6 +168,30 @@ class MainActivity : AppCompatActivity() {
         updateUIStatus(false, "none", "idle")
         
         Toast.makeText(this, "CoreEngine stopped", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun stopEverything() {
+        Log.d(TAG, "Stopping EVERYTHING: CoreEngine + VPN")
+        
+        // 1. Stop VPN first (network layer)
+        try {
+            VpnDnsService.stopVpn(this)
+            Log.d(TAG, "✅ VPN & CoreEngine stopped")
+        } catch (e: Exception) {
+            Log.e(TAG, "VPN stop error: ${e.message}")
+        }
+        
+        // 2. Stop CoreEngine service
+        val intent = Intent(this, AppCoreEngService::class.java).apply {
+            action = AppCoreEngService.ACTION_STOP_ENGINE
+        }
+        startService(intent)
+        
+        // 3. Update UI
+        currentDns = "none"
+        updateUIStatus(false, "none", "idle")
+        
+        Toast.makeText(this, "All services stopped", Toast.LENGTH_SHORT).show()
     }
 
     private fun triggerDoAllJob() {

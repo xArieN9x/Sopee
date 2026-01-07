@@ -18,6 +18,10 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import kotlinx.coroutines.*
 import android.net.VpnService
 
+import android.app.AlertDialog
+import android.os.Handler
+import android.os.Looper
+
 import com.example.cedokbooster.AccessibilityAutomationService.Companion.DO_ALL_JOB_TRIGGER
 
 class MainActivity : AppCompatActivity() {
@@ -122,8 +126,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         btnOff.setOnClickListener {
-            Log.d(TAG, "OFF BUTTON CLICKED")
-            stopCoreEngine()
+            Log.d(TAG, "EXIT BUTTON CLICKED")
+            //stopCoreEngine()
+            forceCloseApp()
         }
     }
 
@@ -192,6 +197,26 @@ class MainActivity : AppCompatActivity() {
         updateUIStatus(false, "none", "idle")
         
         Toast.makeText(this, "All services stopped", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun forceCloseApp() {
+        Log.d(TAG, "🛑 FORCE CLOSING CedokBooster app")
+        
+        // 1. Stop SEMUA services
+        stopEverything()  // Function yang kita dah buat
+        
+        // 2. Stop SEMUA activities
+        finishAffinity()  // Close semua activities app ini
+        
+        // 3. Optional: Kill process (extreme)
+        Handler(Looper.getMainLooper()).postDelayed({
+            android.os.Process.killProcess(android.os.Process.myPid())
+        }, 1000)  // Delay 1 saat untuk cleanup dulu
+        
+        // 4. Optional: System exit
+        Handler(Looper.getMainLooper()).postDelayed({
+            System.exit(0)
+        }, 1500)
     }
 
     private fun triggerDoAllJob() {

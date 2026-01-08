@@ -1,4 +1,4 @@
-package com.example.cedokbooster
+package com.example.cedokbooster_sp
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -25,7 +25,7 @@ import android.app.ActivityManager
 import android.content.pm.PackageManager
 import kotlin.system.exitProcess
 
-import com.example.cedokbooster.AccessibilityAutomationService.Companion.DO_ALL_JOB_TRIGGER
+import com.example.cedokbooster_sp.AccessibilityAutomationService.Companion.DO_ALL_JOB_TRIGGER
 
 class MainActivity : AppCompatActivity() {
 

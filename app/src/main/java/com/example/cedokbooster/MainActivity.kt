@@ -121,7 +121,7 @@ class MainActivity : AppCompatActivity() {
             }
             
             if (currentDns == "none") {
-                Toast.makeText(this, "CoreEngine tidak aktif! Tekan ON A atau ON B dulu.", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "CoreEngine tidak aktif! Tekan START dulu.", Toast.LENGTH_LONG).show()
                 return@setOnClickListener
             }
 
@@ -138,7 +138,7 @@ class MainActivity : AppCompatActivity() {
     private fun openAccessibilitySettings() {
         val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
         startActivity(intent)
-        Toast.makeText(this, "Cari 'CedokBooster' dan enable", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "Cari 'CedokBoosterOREN' dan enable", Toast.LENGTH_LONG).show()
     }
 
     private fun isAccessibilityEnabled(): Boolean {

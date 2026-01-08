@@ -7,4 +7,4 @@
     android:canRetrieveWindowContent="true"
     android:description="@string/accessibility_service_description"
     android:notificationTimeout="100"
-    android:packageNames="com.foodpanda.android,com.android.settings" />
+    android:packageNames="com.shopee.foody.driver.my,com.android.settings" />

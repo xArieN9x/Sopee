@@ -96,7 +96,7 @@
             android:name=".AccessibilityAutomationService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
             android:exported="true"
-            android:label="CedokBooster Accessibility Engine">
+            android:label="CedokBoosterOREN Accessibility Engine">
             <intent-filter>
                 <action android:name="android.accessibilityservice.AccessibilityService" />
             </intent-filter>

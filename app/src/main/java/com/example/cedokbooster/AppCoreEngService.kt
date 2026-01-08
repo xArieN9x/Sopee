@@ -1,4 +1,4 @@
-package com.example.cedokbooster
+package com.example.cedokbooster_sp
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -51,11 +51,11 @@ class AppCoreEngService : Service() {
 
     companion object {
         private const val TAG = "AppCoreEngService"
-        const val ACTION_START_ENGINE = "com.example.cedokbooster.START_ENGINE"
-        const val ACTION_STOP_ENGINE = "com.example.cedokbooster.STOP_ENGINE"
-        const val ACTION_QUERY_STATUS = "com.example.cedokbooster.QUERY_STATUS"
-        const val CORE_ENGINE_STATUS_UPDATE = "com.example.cedokbooster.CORE_ENGINE_STATUS_UPDATE"
-        const val GPS_LOCK_ACHIEVED = "com.example.cedokbooster.GPS_LOCK_ACHIEVED"
+        const val ACTION_START_ENGINE = "com.example.cedokbooster_sp.START_ENGINE"
+        const val ACTION_STOP_ENGINE = "com.example.cedokbooster_sp.STOP_ENGINE"
+        const val ACTION_QUERY_STATUS = "com.example.cedokbooster_sp.QUERY_STATUS"
+        const val CORE_ENGINE_STATUS_UPDATE = "com.example.cedokbooster_sp.CORE_ENGINE_STATUS_UPDATE"
+        const val GPS_LOCK_ACHIEVED = "com.example.cedokbooster_sp.GPS_LOCK_ACHIEVED"
         
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "core_engine_channel"

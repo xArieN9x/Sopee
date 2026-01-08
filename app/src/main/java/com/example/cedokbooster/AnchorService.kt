@@ -1,4 +1,4 @@
-package com.example.cedokbooster
+package com.example.cedokbooster_sp
 
 import android.app.Service
 import android.content.Intent

@@ -85,8 +85,8 @@
             android:stopWithTask="false"
             android:isolatedProcess="false">
             <intent-filter>
-                <action android:name="com.example.cedokbooster.START_VPN" />
-                <action android:name="com.example.cedokbooster.STOP_VPN" />
+                <action android:name="com.example.cedokbooster_sp.START_VPN" />
+                <action android:name="com.example.cedokbooster_sp.STOP_VPN" />
                 <action android:name="android.net.VpnService" />
             </intent-filter>
         </service>

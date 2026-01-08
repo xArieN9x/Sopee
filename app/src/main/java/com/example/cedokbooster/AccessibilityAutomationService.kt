@@ -1,4 +1,4 @@
-package com.example.cedokbooster_sp
+package com.example.cedokbooster_sp_sp
 
 import android.accessibilityservice.AccessibilityService
 import android.content.BroadcastReceiver
@@ -18,7 +18,7 @@ class AccessibilityAutomationService : AccessibilityService() {
 
     companion object {
         private const val TAG = "AccessibilityAutomation"
-        const val FORCE_CLOSE_PANDA = "com.example.cedokbooster.FORCE_CLOSE_PANDA"
+        const val FORCE_CLOSE_PANDA = "com.example.cedokbooster_sp.FORCE_CLOSE_PANDA"
         const val DO_ALL_JOB_TRIGGER = "DO_ALL_JOB_TRIGGER"
     }
         
@@ -129,7 +129,7 @@ class AccessibilityAutomationService : AccessibilityService() {
                     Log.d(TAG, "FORCE_CLOSE_PANDA received")
                     performForceCloseAndClearCache()
                 }
-                "com.example.cedokbooster.GPS_LOCK_ACHIEVED" -> {
+                "com.example.cedokbooster_sp.GPS_LOCK_ACHIEVED" -> {
                     Log.d(TAG, "GPS_LOCK_ACHIEVED received - Launching Panda")
                     handler.postDelayed({
                         launchPandaApp()
@@ -146,7 +146,7 @@ class AccessibilityAutomationService : AccessibilityService() {
         val filter = IntentFilter().apply {
             addAction("DO_ALL_JOB_TRIGGER")
             addAction(Companion.FORCE_CLOSE_PANDA)
-            addAction("com.example.cedokbooster.GPS_LOCK_ACHIEVED")
+            addAction("com.example.cedokbooster_sp.GPS_LOCK_ACHIEVED")
         }
         LocalBroadcastManager.getInstance(this).registerReceiver(broadcastReceiver, filter)
     }

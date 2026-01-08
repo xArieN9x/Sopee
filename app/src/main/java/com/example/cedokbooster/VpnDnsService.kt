@@ -1,4 +1,4 @@
-package com.example.cedokbooster
+package com.example.cedokbooster_sp
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -33,9 +33,9 @@ class VpnDnsService : VpnService() {
         private const val VPN_PREFIX_LENGTH = 24
         
         // Actions
-        private const val ACTION_START_VPN = "com.example.cedokbooster.START_VPN"
-        private const val ACTION_STOP_VPN = "com.example.cedokbooster.STOP_VPN"
-        private const val ACTION_SOFT_RESTART = "com.example.cedokbooster.SOFT_RESTART_VPN"
+        private const val ACTION_START_VPN = "com.example.cedokbooster_sp.START_VPN"
+        private const val ACTION_STOP_VPN = "com.example.cedokbooster_sp.STOP_VPN"
+        private const val ACTION_SOFT_RESTART = "com.example.cedokbooster_sp.SOFT_RESTART_VPN"
         const val EXTRA_DNS_TYPE = "dns_type"
 
         // Restart limits

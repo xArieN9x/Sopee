@@ -1,4 +1,4 @@
-package com.example.cedokbooster
+package com.example.cedokbooster_sp
 
 import android.app.Service
 import android.content.Intent
@@ -18,8 +18,8 @@ class FloatingWidgetService : Service() {
 
     companion object {
         private const val TAG = "FloatingWidgetService"
-        const val ACTION_START_WIDGET = "com.example.cedokbooster.START_WIDGET"
-        const val ACTION_STOP_WIDGET = "com.example.cedokbooster.STOP_WIDGET"
+        const val ACTION_START_WIDGET = "com.example.cedokbooster_sp.START_WIDGET"
+        const val ACTION_STOP_WIDGET = "com.example.cedokbooster_sp.STOP_WIDGET"
     }
 
     override fun onCreate() {

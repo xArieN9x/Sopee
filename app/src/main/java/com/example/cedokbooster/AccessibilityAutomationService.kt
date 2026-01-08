@@ -1,4 +1,4 @@
-package com.example.cedokbooster_sp_sp
+package com.example.cedokbooster_sp
 
 import android.accessibilityservice.AccessibilityService
 import android.content.BroadcastReceiver

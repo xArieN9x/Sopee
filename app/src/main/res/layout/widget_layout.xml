@@ -10,11 +10,12 @@
         android:layout_width="60dp"
         android:layout_height="60dp"
         android:text="CB"
-        android:textSize="18sp"
+        android:textSize="22sp"
         android:textStyle="bold"
         android:textColor="#ffffff"
         android:gravity="center"
-        android:background="#FF0000"
-        android:elevation="8dp" />
-
+        android:background="@drawable/widget_bg"
+        android:fontFamily="@font/goku"
+        android:elevation="8dp"
+        android:padding="4dp" />
 </LinearLayout>

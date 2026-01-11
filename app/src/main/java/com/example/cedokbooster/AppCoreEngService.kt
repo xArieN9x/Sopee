@@ -349,10 +349,10 @@ class AppCoreEngService : Service() {
             // B1: CDN Pre-warming (one-time)
             prewarmCDNConnections()
             
-            // C1: Network Priority Setup
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                setupNetworkPriority()
-            }
+            // C1: Network Priority Setup - COMMENT DULU KALAU TAK ADA
+            // if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            //     setupNetworkPriority()
+            // }
             
             var cycle = 0
             
@@ -385,7 +385,7 @@ class AppCoreEngService : Service() {
                         "https://dns.google",
                         "https://one.one.one.one",
                         "https://www.gstatic.com"
-                    ) // Total: 16 target
+                    )
                     
                     val targetIndex = cycle % targets.size
                     val target = targets[targetIndex]
@@ -399,7 +399,7 @@ class AppCoreEngService : Service() {
                                 pingData,
                                 pingData.size,
                                 InetAddress.getByName(quicTestIP),
-                                53  // DNS port
+                                53
                             )
                             udpSocket.send(pingPacket)
                             Log.d(TAG, "UDP keep-alive -> $quicTestIP:53")
@@ -421,7 +421,7 @@ class AppCoreEngService : Service() {
                             connection.connectTimeout = 4000
                             connection.readTimeout = 6000
                             
-                            // ENHANCED: Realistic browser headers
+                            // Realistic browser headers
                             connection.setRequestProperty("User-Agent", 
                                 "Mozilla/5.0 (Linux; Android 10; RMX2020) AppleWebKit/537.36 " +
                                 "(KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36")
@@ -433,19 +433,21 @@ class AppCoreEngService : Service() {
                             connection.setRequestProperty("Accept-Language", "en-US,en;q=0.9")
                             connection.setRequestProperty("Connection", "keep-alive")
                             
-                            // HEADER KHAS untuk Shopee
+                            // Header khas untuk Shopee
                             if (target.contains(".shopee.") || target.contains("143.92.88.1")) {
                                 connection.setRequestProperty("X-Requested-With", "com.shopee.foody.driver.my")
-                                connection.setRequestProperty("Origin", "https://shopee.com.my")
                             }
                             
-                            // ENHANCED: Request methods rotation
-                            val methods = listOf("HEAD", "GET", "OPTIONS")
+                            // Request methods rotation
                             val method = when {
                                 target.contains("googlevideo.com") -> "HEAD"
                                 target.contains(".shopee.") -> "HEAD"
                                 cycle % 5 == 0 -> "GET"
-                                else -> methods[cycle % methods.size]
+                                else -> when (cycle % 3) {
+                                    0 -> "HEAD"
+                                    1 -> "GET"
+                                    else -> "OPTIONS"
+                                }
                             }
                             connection.requestMethod = method
                             
@@ -480,21 +482,16 @@ class AppCoreEngService : Service() {
                                 }
                             }
                             
-                            // ENHANCED: Traffic classification
+                            // Traffic classification
                             val trafficType = when {
-                                // SHOPEE CRITICAL
                                 target.contains("143.92.88.1") -> "SHOPEE-CF-LB"
                                 target.contains("food-driver.shopee") -> "SHOPEE-CORE"
                                 target.contains("df.infra.shopee") -> "SHOPEE-INFRA"
                                 target.contains("food-metric.shopee") -> "SHOPEE-ORDER"
                                 target.contains("ubt.tracking.shopee") -> "SHOPEE-UBT"
-                                
-                                // SHOPEE SUPPORT
                                 target.contains("apm.tracking.shopee") -> "SHOPEE-APM"
                                 target.contains("endpoint.mms.shopee") -> "SHOPEE-MMS"
                                 target.contains("patronus.idata") -> "SHOPEE-DATA"
-                                
-                                // CDN NATURAL
                                 target.contains("ytimg.com") || target.contains("yt3.ggpht.com") -> "YT-CDN"
                                 target.contains("googlevideo.com") -> "YT-VIDEO"
                                 target.contains("one.one.one.one") -> "CF-DNS"
@@ -518,18 +515,12 @@ class AppCoreEngService : Service() {
                         }
                     }
                     
-                    // ENHANCED: Adaptive delays dengan Shopee Priority
+                    // Adaptive delays dengan Shopee Priority
                     val delay = when {
                         consecutiveFailures >= maxFailures -> 60000L
                         !success -> 15000L
-                        
-                        // PRIORITY 1: CLOUDFLARE & CORE SHOPEE (8-15s)
                         targetIndex <= 4 -> (8000L..15000L).random()
-                        
-                        // PRIORITY 2: SHOPEE SUPPORT (10-20s)
                         targetIndex <= 7 -> (10000L..20000L).random()
-                        
-                        // PRIORITY 3: CDN NATURAL (natural pattern)
                         else -> when (cycle % 6) {
                             0 -> 15000L
                             1 -> 25000L
@@ -554,63 +545,6 @@ class AppCoreEngService : Service() {
         }
         
         Log.d(TAG, "SHOPEE-PRIORITY Network conditioning started")
-    }
-    
-    // B2: ENHANCED CDN Pre-warming dengan Shopee hosts
-    private fun prewarmCDNConnections() {
-        CoroutineScope(Dispatchers.IO).launch {
-            val cdns = listOf(
-                // SHOPEE CRITICAL FIRST
-                "https://143.92.88.1",
-                "https://food-driver.shopee.com.my",
-                "https://df.infra.shopee.com.my",
-                
-                // CDN NATURAL
-                "https://www.google.com",
-                "https://yt3.ggpht.com",
-                "https://i.ytimg.com",
-                "https://fonts.gstatic.com",
-                "https://www.gstatic.com",
-                "https://play.googleapis.com",
-                "https://dns.google",
-                "https://one.one.one.one"
-            )
-            
-            cdns.forEachIndexed { index, cdn ->
-                delay(index * 800L)
-                
-                var attempts = 0
-                var success = false
-                
-                while (!success && attempts < 2) {
-                    attempts++
-                    try {
-                        val connection = URL(cdn).openConnection() as HttpURLConnection
-                        connection.connectTimeout = 4000
-                        connection.readTimeout = 4000
-                        connection.requestMethod = "HEAD"
-                        
-                        connection.setRequestProperty("User-Agent", 
-                            "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36")
-                        
-                        // Header khas untuk Shopee
-                        if (cdn.contains(".shopee.") || cdn.contains("143.92.88.1")) {
-                            connection.setRequestProperty("X-Requested-With", "com.shopee.foody.driver.my")
-                        }
-                        
-                        connection.connect()
-                        val code = connection.responseCode
-                        Log.d(TAG, "CDN pre-warmed: $cdn ($code) [Attempt: $attempts]")
-                        connection.disconnect()
-                        success = true
-                        
-                    } catch (e: Exception) {
-                        Log.w(TAG, "CDN pre-warm retry $cdn (attempt $attempts)")
-                        if (attempts < 2) delay(1000L)
-                    }
-                }
-            }
-        }
     }
 
     private fun stopNetworkConditioning() {

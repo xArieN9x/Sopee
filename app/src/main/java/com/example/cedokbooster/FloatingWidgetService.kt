@@ -9,6 +9,7 @@ import android.os.IBinder
 import android.util.Log
 import android.view.*
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 
 class FloatingWidgetService : Service() {
 
@@ -47,21 +48,19 @@ class FloatingWidgetService : Service() {
 
     private fun showFloatingWidget() {
         if (floatingView != null) return
-
+    
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-
         floatingView = LayoutInflater.from(this).inflate(R.layout.widget_layout, null)
-
-        val layoutFlag = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        } else {
-            WindowManager.LayoutParams.TYPE_PHONE
-        }
-
+        
+        // AMBIL CARA ALLINONE - ukuran tetap
         val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            layoutFlag,
+            120,  // 60dp x density (60 x 2 = 120px)
+            120,
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            } else {
+                WindowManager.LayoutParams.TYPE_PHONE
+            },
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
             PixelFormat.TRANSLUCENT
         ).apply {
@@ -69,21 +68,18 @@ class FloatingWidgetService : Service() {
             x = 0
             y = 100
         }
-
+    
         windowManager?.addView(floatingView, params)
         updateWidgetColor()
-        setupTouchListener(params)
-
-        Log.d(TAG, "Floating widget shown")
+        setupTouchListener(params) // pakai listener sama
     }
-
+    
     private fun updateWidgetColor() {
         floatingView?.findViewById<TextView>(R.id.tvWidget)?.apply {
-            if (isActive) {
-                setBackgroundColor(Color.parseColor("#8000FF00")) // Green 50% opacity
-            } else {
-                setBackgroundColor(Color.parseColor("#80FF0000")) // Red 50% opacity
-            }
+            background = ContextCompat.getDrawable(
+                this@FloatingWidgetService,
+                if (isActive) R.drawable.widget_bg_green else R.drawable.widget_bg
+            )
         }
     }
 

@@ -201,7 +201,7 @@ class AccessibilityAutomationService : AccessibilityService() {
             try {
                 // 1. Buka App Info Panda
                 val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
-                    data = android.net.Uri.parse("package:com.logistics.rider.foodpanda")
+                    data = android.net.Uri.parse("package:com.shopee.foody.driver.my")
                     addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 }
                 startActivity(intent)
@@ -333,7 +333,7 @@ class AccessibilityAutomationService : AccessibilityService() {
     private fun launchPandaApp() {
         handler.post {
             try {
-                val intent = packageManager.getLaunchIntentForPackage("com.logistics.rider.foodpanda")
+                val intent = packageManager.getLaunchIntentForPackage("com.shopee.foody.driver.my")
                 if (intent != null) {
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
                     startActivity(intent)
@@ -357,7 +357,7 @@ class AccessibilityAutomationService : AccessibilityService() {
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         event?.let {
-            if (it.packageName == "com.logistics.rider.foodpanda") {
+            if (it.packageName == "com.shopee.foody.driver.my") {
                 Log.d(TAG, "Panda window event: ${it.className}")
             }
         }

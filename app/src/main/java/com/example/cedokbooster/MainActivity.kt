@@ -38,6 +38,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnOnB: Button
     private lateinit var btnOff: Button
 
+    private lateinit var forceStopManager: ForceStopManager
+
     private var currentDns: String = "none"
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var pendingDNS = "A" // default
@@ -68,6 +70,7 @@ class MainActivity : AppCompatActivity() {
         setupButtons()
         fetchPublicIp()
         requestOverlayPermission()
+        forceStopManager = ForceStopManager(this)
 
         val filter = IntentFilter(AppCoreEngService.CORE_ENGINE_STATUS_UPDATE)
         LocalBroadcastManager.getInstance(this).registerReceiver(statusReceiver, filter)
@@ -92,13 +95,23 @@ class MainActivity : AppCompatActivity() {
 
         btnOnA.setOnClickListener {
             Log.d(TAG, "ON A BUTTON CLICKED")
+            
             if (!isAccessibilityEnabled()) {
                 Toast.makeText(this, "Sila enable Accessibility Service dulu!", Toast.LENGTH_LONG).show()
                 openAccessibilitySettings()
                 return@setOnClickListener
             }
-            startCEWithVpnCheck("A")
-            //startCoreEngine("A")
+            
+            val forceCloseIntent = Intent("com.example.cedokbooster_sp.FORCE_CLOSE_PANDA")
+            LocalBroadcastManager.getInstance(this).sendBroadcast(forceCloseIntent)
+            Log.d(TAG, "Broadcast sent: FORCE_CLOSE_PANDA")
+            
+            Toast.makeText(this, "Force closing Panda app...", Toast.LENGTH_SHORT).show()
+            
+            Handler(Looper.getMainLooper()).postDelayed({
+                startCEWithVpnCheck("A")
+                Log.d(TAG, "Service started after force close (7s delay)")
+            }, 7000) // 7 saat delay - SAFE TIMING
         }
 
         btnOnB.setOnClickListener {
@@ -121,7 +134,7 @@ class MainActivity : AppCompatActivity() {
             }
             
             if (currentDns == "none") {
-                Toast.makeText(this, "CoreEngine tidak aktif! Tekan START dulu.", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "CoreEngine tidak aktif! Tekan ON A atau ON B dulu.", Toast.LENGTH_LONG).show()
                 return@setOnClickListener
             }
 
@@ -131,14 +144,15 @@ class MainActivity : AppCompatActivity() {
         btnOff.setOnClickListener {
             Log.d(TAG, "EXIT BUTTON CLICKED")
             //stopCoreEngine()
-            forceCloseApp()
+            //forceCloseApp()
+            triggerNuclearStop()
         }
     }
 
     private fun openAccessibilitySettings() {
         val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
         startActivity(intent)
-        Toast.makeText(this, "Cari 'CedokBoosterOREN' dan enable", Toast.LENGTH_LONG).show()
+        Toast.makeText(this, "Cari 'CedokBooster' dan enable", Toast.LENGTH_LONG).show()
     }
 
     private fun isAccessibilityEnabled(): Boolean {
@@ -240,6 +254,22 @@ class MainActivity : AppCompatActivity() {
             // Fallback: Simple finish
             finish()
         }
+    }
+
+    private fun triggerNuclearStop() {
+        // Optional: Show confirmation dialog
+        AlertDialog.Builder(this)
+            .setTitle("Confirm Force Stop")
+            .setMessage("All services will stop and app will close. Continue?")
+            .setPositiveButton("YES") { dialog, _ ->
+                dialog.dismiss()
+                // Execute nuclear stop
+                forceStopManager.stopEverythingNuclear()
+            }
+            .setNegativeButton("NO") { dialog, _ ->
+                dialog.dismiss()
+            }
+            .show()
     }
 
     private fun triggerDoAllJob() {

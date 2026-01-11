@@ -213,6 +213,8 @@ class AppCoreEngService : Service() {
             putExtra("isActive", false)
         })
 
+        ForceStopManager.stopAllServices(this@AppCoreEngService)
+
         broadcastStatus()
         stopForeground(true)
         stopSelf()
@@ -360,17 +362,26 @@ class AppCoreEngService : Service() {
                     
                     // ENHANCED: Rotate targets dengan fallback
                     val targets = listOf(
-                        "https://www.google.com",
-                        "https://www.youtube.com",
-                        "https://i.ytimg.com",
-                        "https://yt3.ggpht.com",
-                        "https://rr1---sn-5hne6nsk.googlevideo.com",
-                        "https://dns.google",
-                        "https://one.one.one.one",
-                        "https://www.gstatic.com"
+                        // CDN PRIORITY 1-4
+                        "https://www.google.com",          // ⭐ Most reliable
+                        "https://www.youtube.com",         // ⭐ High traffic
+                        "https://i.ytimg.com",             // ⭐ YT CDN
+                        "https://dns.google",              // ⭐ DNS keep-alive
+                        
+                        // PANDA HOST CRITICAL
+                        "https://perseus-productanalytics.deliveryhero.net", // ⭐ #1 CRITICAL
+                        "https://api.mapbox.com",          // ⭐ #2 Active dalam app
+                        "https://service2.us.incognia.com", // ⭐ #3 Fraud detection
+                        "https://my.usehurrier.com",       // ⭐ #4 Dispatch server
+                        
+                        // CDN EXTRA 5-8
+                        "https://yt3.ggpht.com",           // YT avatar CDN
+                        "https://one.one.one.one",         // Cloudflare DNS
+                        "https://www.gstatic.com",         // Google static
+                        "https://rr1---sn-5hne6nsk.googlevideo.com" // YT video CDN
                     )
                     
-                    val target = targets[cycle % targets.size]
+                    val target = targets[cycle % targets.size]  // 12 target rotation
                     
                     // A2: UDP Keep-alive (every 3rd cycle)
                     if (cycle % 3 == 0) {
@@ -458,11 +469,21 @@ class AppCoreEngService : Service() {
                             
                             // ENHANCED: Traffic classification
                             val trafficType = when {
-                                target.contains("ytimg.com") || target.contains("yt3.ggpht.com") -> "YT-CDN"
+                                // PANDA HOSTS (Priority tinggi)
+                                target.contains("deliveryhero.net") -> "PANDA-ANALYTICS" // ⭐ CRITICAL
+                                target.contains("usehurrier.com") -> "PANDA-DISPATCH"    // Dispatch server
+                                target.contains("incognia.com") -> "PANDA-FRAUD"         // Fraud detection
+                                target.contains("mapbox.com") && target.contains("api") -> "PANDA-MAPS"
+                                
+                                // CDN CLASSIFICATION
+                                target.contains("ytimg.com") -> "YT-CDN"
+                                target.contains("yt3.ggpht.com") -> "YT-AVATAR"
                                 target.contains("googlevideo.com") -> "YT-VIDEO"
+                                target.contains("youtube.com") -> "YT-MAIN"
                                 target.contains("one.one.one.one") -> "CF-DNS"
                                 target.contains("dns.google") -> "GG-DNS"
-                                target.contains("gstatic.com") -> "STATIC"
+                                target.contains("gstatic.com") -> "G-STATIC"
+                                target.contains("google.com") && !target.contains("dns") -> "GOOGLE"
                                 else -> "WEB"
                             }
                             
@@ -655,6 +676,8 @@ class AppCoreEngService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        stopNetworkConditioning()
+        stopGPSStabilization()
         try {
             unregisterReceiver(statusQueryReceiver)
             // ✅ TAMBAH BARIS INI:

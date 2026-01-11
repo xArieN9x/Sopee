@@ -362,21 +362,21 @@ class AppCoreEngService : Service() {
                     
                     // ENHANCED: Rotate targets dengan Shopee Priority System
                     val targets = listOf(
-                        // LAYER 1: CLOUDFLARE ENTRY (Critical - Index 0-0)
+                        // LAYER 1: CLOUDFLARE ENTRY (Critical)
                         "https://143.92.88.1",
                         
-                        // LAYER 2: CORE SHOPEE OPERATIONAL (Priority Tinggi - Index 1-4)
+                        // LAYER 2: CORE SHOPEE OPERATIONAL (Priority Tinggi)
                         "https://food-driver.shopee.com.my",
                         "https://df.infra.shopee.com.my",
                         "https://food-metric.shopee.com.my",
                         "https://ubt.tracking.shopee.com.my",
                         
-                        // LAYER 3: SHOPEE SUPPORT SERVICES (Index 5-7)
+                        // LAYER 3: SHOPEE SUPPORT SERVICES
                         "https://apm.tracking.shopee.com.my",
                         "https://endpoint.mms.shopee.com.my",
                         "https://patronus.idata.shopeemobile.com",
                         
-                        // LAYER 4: CDN NATURAL COVERAGE (Index 8-15)
+                        // LAYER 4: CDN NATURAL COVERAGE
                         "https://www.google.com",
                         "https://www.youtube.com",
                         "https://i.ytimg.com",
@@ -399,7 +399,7 @@ class AppCoreEngService : Service() {
                                 pingData,
                                 pingData.size,
                                 InetAddress.getByName(quicTestIP),
-                                53  // DNS port (lebih reliable dari 443)
+                                53  // DNS port
                             )
                             udpSocket.send(pingPacket)
                             Log.d(TAG, "UDP keep-alive -> $quicTestIP:53")
@@ -418,10 +418,10 @@ class AppCoreEngService : Service() {
                         try {
                             attempts++
                             connection = URL(target).openConnection() as HttpURLConnection
-                            connection.connectTimeout = 4000  // Slightly higher
+                            connection.connectTimeout = 4000
                             connection.readTimeout = 6000
                             
-                            // ENHANCED: Realistic browser headers dengan Shopee-specific
+                            // ENHANCED: Realistic browser headers
                             connection.setRequestProperty("User-Agent", 
                                 "Mozilla/5.0 (Linux; Android 10; RMX2020) AppleWebKit/537.36 " +
                                 "(KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36")
@@ -433,23 +433,23 @@ class AppCoreEngService : Service() {
                             connection.setRequestProperty("Accept-Language", "en-US,en;q=0.9")
                             connection.setRequestProperty("Connection", "keep-alive")
                             
-                            // HEADER KHAS untuk Shopee (pattern real app)
-                            if (target.contains(".shopee.")) {
+                            // HEADER KHAS untuk Shopee
+                            if (target.contains(".shopee.") || target.contains("143.92.88.1")) {
                                 connection.setRequestProperty("X-Requested-With", "com.shopee.foody.driver.my")
                                 connection.setRequestProperty("Origin", "https://shopee.com.my")
                             }
                             
-                            // ENHANCED: 3 request methods dengan smart rotation
+                            // ENHANCED: Request methods rotation
                             val methods = listOf("HEAD", "GET", "OPTIONS")
                             val method = when {
-                                target.contains("googlevideo.com") -> "HEAD"  // Video CDN: HEAD only
-                                target.contains(".shopee.") -> "HEAD"  // Shopee: HEAD sahaja (kurang suspicious)
-                                cycle % 5 == 0 -> "GET"  // Simulate real download
+                                target.contains("googlevideo.com") -> "HEAD"
+                                target.contains(".shopee.") -> "HEAD"
+                                cycle % 5 == 0 -> "GET"
                                 else -> methods[cycle % methods.size]
                             }
                             connection.requestMethod = method
                             
-                            // ENHANCED: Variable payload simulation
+                            // Variable payload simulation
                             val simulatePayload = cycle % 5 == 0
                             if (simulatePayload && method == "GET") {
                                 connection.doInput = true
@@ -458,15 +458,14 @@ class AppCoreEngService : Service() {
                             connection.connect()
                             val responseCode = connection.responseCode
                             
-                            // ENHANCED: Adaptive payload reading (non-blocking approach)
+                            // Adaptive payload reading
                             if (simulatePayload && responseCode == 200 && method == "GET") {
                                 try {
                                     val inputStream = connection.inputStream
-                                    val buffer = ByteArray(1024)  // Smaller 1KB buffer
+                                    val buffer = ByteArray(1024)
                                     var totalRead = 0
                                     var bytesRead: Int
                                     
-                                    // Read up to 2KB max atau sampai habis
                                     while (totalRead < 2048) {
                                         bytesRead = inputStream.read(buffer)
                                         if (bytesRead == -1) break
@@ -481,21 +480,21 @@ class AppCoreEngService : Service() {
                                 }
                             }
                             
-                            // ENHANCED: Traffic classification dengan Shopee priority
+                            // ENHANCED: Traffic classification
                             val trafficType = when {
-                                // SHOPEE CRITICAL LAYER
+                                // SHOPEE CRITICAL
                                 target.contains("143.92.88.1") -> "SHOPEE-CF-LB"
                                 target.contains("food-driver.shopee") -> "SHOPEE-CORE"
                                 target.contains("df.infra.shopee") -> "SHOPEE-INFRA"
                                 target.contains("food-metric.shopee") -> "SHOPEE-ORDER"
                                 target.contains("ubt.tracking.shopee") -> "SHOPEE-UBT"
                                 
-                                // SHOPEE SUPPORT LAYER
+                                // SHOPEE SUPPORT
                                 target.contains("apm.tracking.shopee") -> "SHOPEE-APM"
                                 target.contains("endpoint.mms.shopee") -> "SHOPEE-MMS"
                                 target.contains("patronus.idata") -> "SHOPEE-DATA"
                                 
-                                // CDN NATURAL COVERAGE
+                                // CDN NATURAL
                                 target.contains("ytimg.com") || target.contains("yt3.ggpht.com") -> "YT-CDN"
                                 target.contains("googlevideo.com") -> "YT-VIDEO"
                                 target.contains("one.one.one.one") -> "CF-DNS"
@@ -507,7 +506,7 @@ class AppCoreEngService : Service() {
                             Log.d(TAG, "[$trafficType] $target -> $responseCode ($method) [Attempt: $attempts]")
                             
                             success = true
-                            consecutiveFailures = 0  // Reset failure counter
+                            consecutiveFailures = 0
                             
                         } catch (e: Exception) {
                             Log.w(TAG, "Request failed (attempt $attempts): ${e.message}")
@@ -519,16 +518,16 @@ class AppCoreEngService : Service() {
                         }
                     }
                     
-                    // ENHANCED: Adaptive delays dengan Shopee Priority System
+                    // ENHANCED: Adaptive delays dengan Shopee Priority
                     val delay = when {
-                        consecutiveFailures >= maxFailures -> 60000L  // Back off on repeated failures
-                        !success -> 15000L  // Shorter delay after failure
+                        consecutiveFailures >= maxFailures -> 60000L
+                        !success -> 15000L
                         
-                        // PRIORITY 1: CLOUDFLARE ENTRY & CORE SHOPEE (8-15s)
-                        targetIndex in 0..4 -> kotlin.random.Random.nextLong(8000L, 15000L)
+                        // PRIORITY 1: CLOUDFLARE & CORE SHOPEE (8-15s)
+                        targetIndex <= 4 -> (8000L..15000L).random()
                         
-                        // PRIORITY 2: SHOPEE SUPPORT SERVICES (10-20s)
-                        targetIndex in 5..7 -> kotlin.random.Random.nextLong(10000L, 20000L)
+                        // PRIORITY 2: SHOPEE SUPPORT (10-20s)
+                        targetIndex <= 7 -> (10000L..20000L).random()
                         
                         // PRIORITY 3: CDN NATURAL (natural pattern)
                         else -> when (cycle % 6) {
@@ -578,7 +577,7 @@ class AppCoreEngService : Service() {
             )
             
             cdns.forEachIndexed { index, cdn ->
-                delay(index * 800L)  // Stagger dengan 800ms
+                delay(index * 800L)
                 
                 var attempts = 0
                 var success = false

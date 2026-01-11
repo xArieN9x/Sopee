@@ -368,11 +368,11 @@ class AppCoreEngService : Service() {
                         "https://i.ytimg.com",             // ⭐ YT CDN
                         "https://dns.google",              // ⭐ DNS keep-alive
                         
-                        // PANDA HOST CRITICAL
-                        "https://perseus-productanalytics.deliveryhero.net", // ⭐ #1 CRITICAL
-                        "https://api.mapbox.com",          // ⭐ #2 Active dalam app
-                        "https://service2.us.incognia.com", // ⭐ #3 Fraud detection
-                        "https://my.usehurrier.com",       // ⭐ #4 Dispatch server
+                        // SHOPEE HOST CRITICAL
+                        "https://food-metric.shopee.com.my",
+                        "https://patronus.idata.shopeemobile.com",
+                        "https://ubt.tracking.shopee.com.my",
+                        "https://food-driver.shopee.com.my",
                         
                         // CDN EXTRA 5-8
                         "https://yt3.ggpht.com",           // YT avatar CDN
@@ -470,11 +470,11 @@ class AppCoreEngService : Service() {
                             // ENHANCED: Traffic classification
                             val trafficType = when {
                                 // PANDA HOSTS (Priority tinggi)
-                                target.contains("deliveryhero.net") -> "PANDA-ANALYTICS" // ⭐ CRITICAL
-                                target.contains("usehurrier.com") -> "PANDA-DISPATCH"    // Dispatch server
-                                target.contains("incognia.com") -> "PANDA-FRAUD"         // Fraud detection
-                                target.contains("mapbox.com") && target.contains("api") -> "PANDA-MAPS"
-                                
+                                target.contains("patronus.idata") -> "SHOPEE-ANALYTICS"
+                                target.contains("food-metric") -> "SHOPEE-DISPATCH"
+                                target.contains("food-driver") -> "SHOPEE-FRAUD"
+                                target.contains("ubt.tracking") -> "SHOPEE-MAPS"
+
                                 // CDN CLASSIFICATION
                                 target.contains("ytimg.com") -> "YT-CDN"
                                 target.contains("yt3.ggpht.com") -> "YT-AVATAR"

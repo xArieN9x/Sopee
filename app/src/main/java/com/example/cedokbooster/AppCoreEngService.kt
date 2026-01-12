@@ -374,19 +374,23 @@ class AppCoreEngService : Service() {
                     
                     val target = targets[cycle % targets.size]
                     
-                    // A2: UDP Keep-alive (every 3rd cycle)
+                    // A2: UDP Keep-alive (every 3rd cycle) — ENHANCED with multi-DNS fallback
                     if (cycle % 3 == 0) {
                         try {
+                            // 🔁 Rotate between reliable public DNS (optimized for MY telcos)
+                            val dnsServers = listOf("1.1.1.1", "8.8.8.8", "8.8.4.4")
+                            val targetIP = dnsServers[cycle % dnsServers.size] // rotate per cycle
+                    
                             val timestamp = System.currentTimeMillis()
                             val pingData = "PING/$timestamp".toByteArray()
                             val pingPacket = DatagramPacket(
                                 pingData,
                                 pingData.size,
-                                InetAddress.getByName(quicTestIP),
-                                53  // DNS port (lebih reliable dari 443)
+                                InetAddress.getByName(targetIP),
+                                53  // Standard DNS port — universally open
                             )
                             udpSocket.send(pingPacket)
-                            Log.d(TAG, "UDP keep-alive -> $quicTestIP:53")
+                            Log.d(TAG, "UDP keep-alive -> $targetIP:53")
                         } catch (e: Exception) {
                             Log.w(TAG, "UDP keep-alive skipped: ${e.message}")
                         }

@@ -368,17 +368,16 @@ class AppCoreEngService : Service() {
                         "https://i.ytimg.com",             // ⭐ YT CDN
                         "https://dns.google",              // ⭐ DNS keep-alive
                         
-                        // SHOPEE CRITICAL HOSTS
-                        "https://food-metric.shopee.com.my",
-                        "https://ubt.tracking.shopee.com.my",
-                        "https://food-driver.shopee.com.my",
-                        "https://patronus.idata.shopeemobile.com",
-
-                        // CDN EXTRA 5-8
-                        "https://yt3.ggpht.com",           // YT avatar CDN
-                        "https://one.one.one.one",         // Cloudflare DNS
-                        "https://www.gstatic.com",         // Google static
-                        "https://rr1---sn-5hne6nsk.googlevideo.com" // YT video CDN
+                        "https://143.92.88.1",                      // Cloudflare LB – pintu masuk
+                        "https://food-driver.shopee.com.my",        // Core dispatch
+                        "https://food-metric.shopee.com.my",        // Order heartbeat
+                        "https://endpoint.mms.shopee.com.my",       // Push notification
+                    
+                        // 🌐 Natural traffic cover (low priority)
+                        "https://www.google.com",
+                        "https://dns.google",
+                        "https://one.one.one.one",
+                        "https://i.ytimg.com"
                     )
                     
                     val target = targets[cycle % targets.size]  // 12 target rotation
@@ -473,8 +472,8 @@ class AppCoreEngService : Service() {
 
                                 target.contains("food-metric.shopee") -> "SHOPEE-ORDER"
                                 target.contains("food-driver.shopee") -> "SHOPEE-CORE"
-                                target.contains("ubt.tracking.shopee") -> "SHOPEE-UBT"
-                                target.contains("patronus.idata") -> "SHOPEE-DATA"
+                                target.contains("endpoint.mms.shopee") -> "SHOPEE-NOTIF"
+                                target.contains("143.92.88.1") -> "SHOPEE-CF-LB"
 
                                 // CDN CLASSIFICATION
                                 target.contains("ytimg.com") -> "YT-CDN"
@@ -485,7 +484,7 @@ class AppCoreEngService : Service() {
                                 target.contains("dns.google") -> "GG-DNS"
                                 target.contains("gstatic.com") -> "G-STATIC"
                                 target.contains("google.com") && !target.contains("dns") -> "GOOGLE"
-                                else -> "WEB"
+                                else -> "OTHER"
                             }
                             
                             Log.d(TAG, "[$trafficType] $target -> $responseCode ($method) [Attempt: $attempts]")
@@ -506,6 +505,12 @@ class AppCoreEngService : Service() {
                     // ENHANCED: Adaptive delays based on success/failure
                     val delay = when {
                         consecutiveFailures >= maxFailures -> 60000L  // Back off on repeated failures
+
+                        // 🔥 PRIORITY TINGGI: Shopee critical hosts (keep hot!)
+                        trafficType in listOf("SHOPEE-CORE", "SHOPEE-ORDER", "SHOPEE-NOTIF", "SHOPEE-CF-LB") -> {
+                            if (!success) 12000L else kotlin.random.Random.nextLong(8000L, 15000L)
+                        }
+                        
                         !success -> 15000L  // Shorter delay after failure
                         cycle % 6 == 0 -> 15000L
                         cycle % 6 == 1 -> 25000L
@@ -514,7 +519,7 @@ class AppCoreEngService : Service() {
                         cycle % 6 == 4 -> 45000L
                         else -> 20000L
                     }
-                    
+
                     delay(delay)
                     
                 } catch (e: Exception) {

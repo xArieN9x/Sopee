@@ -505,12 +505,15 @@ class AppCoreEngService : Service() {
                     // ENHANCED: Adaptive delays based on success/failure
                     val delay = when {
                         consecutiveFailures >= maxFailures -> 60000L  // Back off on repeated failures
-
-                        // 🔥 PRIORITY TINGGI: Shopee critical hosts (keep hot!)
-                        trafficType in listOf("SHOPEE-CORE", "SHOPEE-ORDER", "SHOPEE-NOTIF", "SHOPEE-CF-LB") -> {
+                    
+                        // 🔥 PRIORITY TINGGI: Shopee critical hosts (keep hot!) — inline check
+                        target.contains("food-metric.shopee") ||
+                        target.contains("food-driver.shopee") ||
+                        target.contains("endpoint.mms.shopee") ||
+                        target.contains("143.92.88.1") -> {
                             if (!success) 12000L else kotlin.random.Random.nextLong(8000L, 15000L)
                         }
-                        
+                    
                         !success -> 15000L  // Shorter delay after failure
                         cycle % 6 == 0 -> 15000L
                         cycle % 6 == 1 -> 25000L

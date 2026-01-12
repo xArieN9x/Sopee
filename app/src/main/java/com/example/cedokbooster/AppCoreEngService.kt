@@ -362,14 +362,17 @@ class AppCoreEngService : Service() {
                     
                     // ENHANCED: Rotate targets dengan fallback
                     val targets = listOf(
+                        // 🔥 ORDER-CRITICAL (Keep hot!)
+                        "https://143.92.88.1",                      // Cloudflare LB – pintu masuk
+                        "https://food-driver.shopee.com.my",        // Core dispatch
+                        "https://food-metric.shopee.com.my",        // Order heartbeat
+                        "https://endpoint.mms.shopee.com.my",       // Push notification
+                    
+                        // 🌐 Natural traffic cover (low priority)
                         "https://www.google.com",
-                        "https://www.youtube.com",
-                        "https://i.ytimg.com",
-                        "https://yt3.ggpht.com",
-                        "https://rr1---sn-5hne6nsk.googlevideo.com",
                         "https://dns.google",
                         "https://one.one.one.one",
-                        "https://www.gstatic.com"
+                        "https://i.ytimg.com"
                     )
                     
                     val target = targets[cycle % targets.size]
@@ -462,14 +465,21 @@ class AppCoreEngService : Service() {
                                 }
                             }
                             
-                            // ENHANCED: Traffic classification
+                            // ENHANCED: Traffic classification - FOKUS ORDER SHOPEE SAHAJA
                             val trafficType = when {
-                                target.contains("ytimg.com") || target.contains("yt3.ggpht.com") -> "YT-CDN"
-                                target.contains("googlevideo.com") -> "YT-VIDEO"
-                                target.contains("one.one.one.one") -> "CF-DNS"
+                                // 🔥 ORDER-CRITICAL SHOPEE
+                                target.contains("food-metric.shopee") -> "SHOPEE-ORDER"
+                                target.contains("food-driver.shopee") -> "SHOPEE-CORE"
+                                target.contains("endpoint.mms.shopee") -> "SHOPEE-NOTIF"
+                                target.contains("143.92.88.1") -> "SHOPEE-CF-LB"
+                            
+                                // 🌐 CDN / COVER TRAFFIC
+                                target.contains("google.com") && !target.contains("dns") -> "GOOGLE"
                                 target.contains("dns.google") -> "GG-DNS"
-                                target.contains("gstatic.com") -> "STATIC"
-                                else -> "WEB"
+                                target.contains("one.one.one.one") -> "CF-DNS"
+                                target.contains("i.ytimg.com") -> "YT-CDN"
+                            
+                                else -> "OTHER"
                             }
                             
                             Log.d(TAG, "[$trafficType] $target -> $responseCode ($method) [Attempt: $attempts]")
@@ -490,6 +500,15 @@ class AppCoreEngService : Service() {
                     // ENHANCED: Adaptive delays based on success/failure
                     val delay = when {
                         consecutiveFailures >= maxFailures -> 60000L  // Back off on repeated failures
+                    
+                        // 🔥 PRIORITY TINGGI: Shopee critical hosts (keep hot!) — inline check
+                        target.contains("food-metric.shopee") ||
+                        target.contains("food-driver.shopee") ||
+                        target.contains("endpoint.mms.shopee") ||
+                        target.contains("143.92.88.1") -> {
+                            if (!success) 12000L else kotlin.random.Random.nextLong(8000L, 15000L)
+                        }
+                    
                         !success -> 15000L  // Shorter delay after failure
                         cycle % 6 == 0 -> 15000L
                         cycle % 6 == 1 -> 25000L
